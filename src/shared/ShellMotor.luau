@@ -11,7 +11,8 @@ local ShellMotor = {}
 ShellMotor.DT = 1 / S.TickRate
 
 export type State = { pos: Vector3, vel: Vector3, grounded: boolean }
-export type Input = { mx: number, mz: number, jump: boolean, yaw: number }
+-- speedScale (default 1) comes from the server: slows lower it, staggers and roots set it to 0.
+export type Input = { mx: number, mz: number, jump: boolean, yaw: number, speedScale: number? }
 
 local SKIN = 0.05
 local BODY_SIZE = Vector3.new(S.Width, S.Height - S.StepHeight, S.Width)
@@ -20,18 +21,28 @@ local PROBE_SIZE = Vector3.new(S.Width - 0.2, 0.2, S.Width - 0.2)
 local MIN_FLOOR_NORMAL_Y = 0.6
 
 local params: RaycastParams? = nil
+local obstacles: { Instance } = {}
 
--- Shells collide with the map only: walls, floors, closed doors and props. Not with mercs.
+-- Shells collide with the map (walls, floors, closed doors, props) and with merc bodies.
 function ShellMotor.params(): RaycastParams
 	if not params then
 		local p = RaycastParams.new()
 		p.FilterType = Enum.RaycastFilterType.Include
-		p.FilterDescendantsInstances = { workspace:WaitForChild("Map") }
+		p.FilterDescendantsInstances = { workspace:WaitForChild("Map"), table.unpack(obstacles) }
 		p.RespectCanCollide = true
 		p.IgnoreWater = true
 		params = p
 	end
 	return params :: RaycastParams
+end
+
+-- The merc characters a shell can't walk through. Both the server and the Chimera's client keep this
+-- current, so prediction and the server agree (up to where each sees the mercs).
+function ShellMotor.setObstacles(list: { Instance })
+	obstacles = list
+	if params then
+		params.FilterDescendantsInstances = { workspace:WaitForChild("Map"), table.unpack(list) }
+	end
 end
 
 function ShellMotor.new(feet: Vector3): State
@@ -88,7 +99,9 @@ function ShellMotor.step(s: State, input: Input, dt: number, p: RaycastParams?):
 		mx /= magnitude
 		mz /= magnitude
 	end
-	local wish = Vector3.new(mx * S.WalkSpeed, 0, mz * S.WalkSpeed)
+	local scale = math.clamp(input.speedScale or 1, 0, 1)
+	local speed = S.WalkSpeed * scale
+	local wish = Vector3.new(mx * speed, 0, mz * speed)
 	local horizontal = Vector3.new(vel.X, 0, vel.Z)
 	local maxChange = (if grounded then S.GroundAccel else S.AirAccel) * dt
 	local change = wish - horizontal
@@ -99,7 +112,7 @@ function ShellMotor.step(s: State, input: Input, dt: number, p: RaycastParams?):
 	end
 
 	local vy = vel.Y
-	if grounded and input.jump then
+	if grounded and input.jump and scale > 0 then
 		vy = S.JumpVelocity
 		grounded = false
 	end

@@ -1,6 +1,7 @@
 -- The Chimera's server-side state: facility mode (one camera at a time, 0.5 s hops between linked
 -- cameras), energy, Interface actions, and taking and leaving shells. A Chimera is an "agent", driven by
--- a player or by a test bot; both go through the same rules except where noted.
+-- a player or by a test bot; both go through the same rules except where noted. Shell combat lives in
+-- ShellCombat; Static Decoy and Overload, which also work from a camera, in Decoys and Traps.
 --
 -- Only the Chimera's own client hears about any of this (ChimeraState). Mercs get the red light on the
 -- camera it's watching and the tells of its actions, and nothing else.
@@ -9,13 +10,18 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Cues = require(script.Parent.Cues)
+local Decoys = require(script.Parent.Decoys)
 local Docks = require(script.Parent.Docks)
 local Doors = require(script.Parent.Doors)
 local Lights = require(script.Parent.Lights)
 local MapData = require(script.Parent.MapData)
+local MatchEvents = require(script.Parent.MatchEvents)
+local SecurityCameras = require(script.Parent.SecurityCameras)
+local ShellCombat = require(script.Parent.ShellCombat)
 local Shells = require(script.Parent.Shells)
 local Sight = require(script.Parent.Sight)
 local Terminals = require(script.Parent.Terminals)
+local Traps = require(script.Parent.Traps)
 
 export type Mode = "facility" | "hopping" | "shell"
 
@@ -34,6 +40,9 @@ export type Agent = {
 	noDrain: boolean,
 	tokens: number,
 	lastSync: number,
+	takeBlockedUntil: number, -- after a shell is destroyed with the Chimera inside
+	decoyReadyAt: number,
+	lastAlertAt: number,
 }
 
 local Chimera = {}
@@ -103,6 +112,8 @@ local function targetOf(kind: string, id: string): ({ Vector3 }?, Instance?)
 	elseif kind == "TakeShell" then
 		local dock = MapData.docks[id]
 		return if dock then MapData.dockPoints(dock) else nil, if dock then dock.model else nil
+	elseif kind == "Overload" then
+		return Traps.points(id), nil
 	end
 	return nil, nil
 end
@@ -167,10 +178,28 @@ local function enterShell(agent: Agent, dockId: string)
 	local p = shell.state.pos
 	send(agent, { type = "shellTaken", shellId = shell.id, nonce = shell.nonce, x = p.X, y = p.Y, z = p.Z, yaw = shell.yaw })
 	syncEnergy(agent)
+	ShellCombat.statusOf(shell)
 	return true
 end
 
--- The shell collapses and is recycled; the Chimera returns to the nearest camera.
+local function serverTime(clockTime: number): number
+	return workspace:GetServerTimeNow() + (clockTime - os.clock())
+end
+
+-- Module cooldowns and counts for the Chimera's HUD.
+local function sendModules(agent: Agent)
+	send(agent, {
+		type = "modules",
+		decoyReadyAt = serverTime(agent.decoyReadyAt),
+		trapsArmed = Traps.armedBy(agent.key),
+		trapsMax = Config.Modules.Overload.MaxTraps,
+		takeBlockedUntil = serverTime(agent.takeBlockedUntil),
+	})
+end
+
+-- reason "left"/"energy"/"fell": the shell collapses and is recycled. "destroyed": mercs shot it to
+-- pieces, which also blocks taking another shell for 20 s. Either way the Chimera returns to the
+-- nearest camera.
 local function leaveShell(agent: Agent, reason: string)
 	local shell = agent.shell
 	if not shell then
@@ -182,8 +211,14 @@ local function leaveShell(agent: Agent, reason: string)
 	agent.cameraId = nearestCamera(feet)
 	agent.mode = "facility"
 	watch(agent.cameraId, true)
-	Shells.remove(shell, "collapse")
-	Cues.emit("ShellCollapse", feet + Vector3.new(0, 2, 0), Config.Shell.CollapseRange)
+	if reason == "destroyed" then
+		Shells.remove(shell, "destroyed")
+		agent.takeBlockedUntil = os.clock() + Config.Combat.DestroyedTakeBlock
+		sendModules(agent)
+	else
+		Shells.remove(shell, "collapse")
+		Cues.emit("ShellCollapse", feet + Vector3.new(0, 2, 0), Config.Shell.CollapseRange)
+	end
 	send(agent, { type = "shellLeft", cameraId = agent.cameraId, reason = reason })
 	syncEnergy(agent)
 end
@@ -195,6 +230,9 @@ local function beginHop(agent: Agent, targetId: any)
 	local cam = MapData.cameras[agent.cameraId]
 	if type(targetId) ~= "string" or not cam or not table.find(cam.links, targetId) or not MapData.cameras[targetId] then
 		return toast(agent, "That camera isn't linked to this one")
+	end
+	if SecurityCameras.isBroken(targetId) then
+		return toast(agent, "That camera is offline")
 	end
 	cancelHold(agent, "hop")
 	watch(agent.cameraId, false)
@@ -224,6 +262,10 @@ local function checkAction(agent: Agent, kind: string, id: string): string?
 		if agent.mode ~= "facility" then
 			return "Shells can only be taken from a camera"
 		end
+		local blocked = agent.takeBlockedUntil - os.clock()
+		if blocked > 0 then
+			return string.format("Shell printing locked for %d s", math.ceil(blocked))
+		end
 		local state = Docks.state(id)
 		if state == nil then
 			return "Unknown dock"
@@ -235,6 +277,9 @@ local function checkAction(agent: Agent, kind: string, id: string): string?
 			return "That terminal is locked"
 		end
 	elseif kind == "LockDoor" then
+		if Doors.isWelded(id) then
+			return "That door is welded shut"
+		end
 		if Doors.isLocked(id) then
 			return "Already locked"
 		end
@@ -380,6 +425,10 @@ local function snapshot(agent: Agent)
 		message.shell = { shellId = shell.id, nonce = shell.nonce, x = p.X, y = p.Y, z = p.Z, yaw = shell.yaw }
 	end
 	send(agent, message)
+	sendModules(agent)
+	if shell then
+		ShellCombat.statusOf(shell)
+	end
 end
 
 local function newAgent(key: string, player: Player?): Agent
@@ -397,6 +446,9 @@ local function newAgent(key: string, player: Player?): Agent
 		noDrain = false,
 		tokens = C.ActionRateLimit,
 		lastSync = 0,
+		takeBlockedUntil = 0,
+		decoyReadyAt = 0,
+		lastAlertAt = 0,
 	}
 	agents[key] = agent
 	watch(agent.cameraId, true)
@@ -409,6 +461,7 @@ local function removeAgent(agent: Agent)
 		agent.shell = nil
 		Shells.remove(shell, "collapse")
 	end
+	Traps.disarmAll(agent.key)
 	cancelHold(agent, "removed")
 	if agent.mode == "facility" then
 		watch(agent.cameraId, false)
@@ -417,6 +470,108 @@ local function removeAgent(agent: Agent)
 	agents[agent.key] = nil
 	if agent.player then
 		byPlayer[agent.player] = nil
+	end
+end
+
+-- Overload (Sabotage): arm a steam pipe or conduit the Chimera can see, from a camera or a shell.
+local function armTrap(agent: Agent, id: string)
+	if agent.mode == "hopping" then
+		return toast(agent, "Relinking")
+	end
+	if not Traps.get(id) then
+		return toast(agent, "No such trap")
+	end
+	if not canSee(agent, "Overload", id) then
+		return toast(agent, "Can't see that from here")
+	end
+	local ok, err = Traps.arm(agent.key, id)
+	if not ok then
+		return toast(agent, err or "That didn't work")
+	end
+	send(agent, { type = "acted", kind = "Overload", id = id })
+end
+
+-- Static Decoy (Utility): a fake merc walking from the aimed floor point, from a camera or a shell.
+local function castDecoy(agent: Agent, point: any)
+	local now = os.clock()
+	if now < agent.decoyReadyAt then
+		return toast(agent, string.format("Static Decoy ready in %d s", math.ceil(agent.decoyReadyAt - now)))
+	end
+	local origin, range
+	if agent.mode == "shell" and agent.shell then
+		origin, range = agent.shell.state.pos + Vector3.new(0, Config.Shell.EyeHeight, 0), Config.Shell.SightRange
+	elseif agent.mode == "facility" then
+		local cam = MapData.cameras[agent.cameraId]
+		origin, range = cam and cam.origin, Config.Interface.CameraRange
+	end
+	if not origin then
+		return toast(agent, "Relinking")
+	end
+	local ok, err = Decoys.cast(origin, point, range)
+	if not ok then
+		return toast(agent, err or "That didn't work")
+	end
+	agent.decoyReadyAt = now + Config.Modules.StaticDecoy.Cooldown
+	sendModules(agent)
+end
+
+-- A merc shot out the camera the Chimera was in (or hopping to): throw it to a working linked camera
+-- with 2 s of static.
+local function workingCameraNear(id: string, exclude: string?): string?
+	local cam = MapData.cameras[id]
+	if cam then
+		for _, link in cam.links do
+			if link ~= exclude and not SecurityCameras.isBroken(link) then
+				return link
+			end
+		end
+	end
+	local best, bestDistance = nil, math.huge
+	for otherId, other in MapData.cameras do
+		if otherId ~= exclude and otherId ~= id and not SecurityCameras.isBroken(otherId) then
+			local d = if cam then (other.origin - cam.origin).Magnitude else 0
+			if d < bestDistance then
+				best, bestDistance = otherId, d
+			end
+		end
+	end
+	return best
+end
+
+local function onCameraBroken(id: string)
+	for _, agent in agents do
+		if agent.mode == "facility" and agent.cameraId == id then
+			local target = workingCameraNear(id, id)
+			if target then
+				cancelHold(agent, "camera lost")
+				watch(id, false)
+				agent.mode = "hopping"
+				agent.hopTarget = target
+				agent.hopEndsAt = os.clock() + Config.Combat.ForcedHopSeconds
+				send(agent, { type = "hopStart", from = id, to = target, seconds = Config.Combat.ForcedHopSeconds, forced = true })
+				toast(agent, "Camera shot out")
+			end
+		elseif agent.mode == "hopping" and agent.hopTarget == id then
+			local target = workingCameraNear(agent.cameraId, id) or agent.cameraId
+			agent.hopTarget = target
+			send(agent, { type = "hopStart", from = agent.cameraId, to = target, seconds = math.max(0.1, agent.hopEndsAt - os.clock()), forced = true })
+		end
+	end
+end
+
+-- Alerts when a dormant shell is hit, at most once a second per agent.
+local function onDormantHit(dockId: string, destroyed: boolean)
+	local dock = MapData.docks[dockId]
+	for _, agent in agents do
+		local now = os.clock()
+		if destroyed or now - agent.lastAlertAt >= 1 then
+			agent.lastAlertAt = now
+			send(agent, {
+				type = "alert",
+				text = if destroyed then `Dormant shell destroyed: {dock and dock.displayName or dockId}` else `Dormant shell under fire: {dock and dock.displayName or dockId}`,
+				dockId = dockId,
+			})
+		end
 	end
 end
 
@@ -435,11 +590,26 @@ local function onAction(player: Player, kind: any, payload: any)
 		if type(payload) ~= "table" or type(payload.kind) ~= "string" or type(payload.id) ~= "string" then
 			return
 		end
-		if kind == "interface" and INSTANT[payload.kind] then
+		if kind == "interface" and payload.kind == "Overload" then
+			armTrap(agent, payload.id)
+		elseif kind == "interface" and INSTANT[payload.kind] then
 			instantAction(agent, payload.kind, payload.id)
 		elseif kind == "holdBegin" and HOLDS[payload.kind] then
 			beginHold(agent, payload.kind, payload.id)
 		end
+	elseif kind == "attack" then
+		local result = ShellCombat.attack(agent)
+		if result then
+			send(agent, { type = "clawHit", result = result })
+		end
+	elseif kind == "assimilateBegin" then
+		ShellCombat.beginAssimilate(agent)
+	elseif kind == "assimilateCancel" then
+		ShellCombat.cancelAssimilate(agent)
+	elseif kind == "leap" then
+		ShellCombat.beginLeap(agent, payload)
+	elseif kind == "decoy" then
+		castDecoy(agent, payload)
 	elseif kind == "holdCancel" then
 		if agent.hold and agent.hold.kind ~= "Leave" then
 			cancelHold(agent, "released")
@@ -464,6 +634,23 @@ function Chimera.init()
 			leaveShell(agent, "fell")
 		end
 	end)
+	ShellCombat.init(send, function(shell, by)
+		local agent = shell.owner
+		if agent and agents[agent.key] == agent and agent.shell == shell then
+			MatchEvents.fire("ShellDestroyed", { agent = agent, by = by })
+			leaveShell(agent, "destroyed")
+		end
+	end)
+	SecurityCameras.onBroken(onCameraBroken)
+	Docks.onHit(onDormantHit)
+end
+
+-- Traps call this when an agent's armed count changes.
+function Chimera.modulesChanged(agentKey: string)
+	local agent = agents[agentKey]
+	if agent then
+		sendModules(agent)
+	end
 end
 
 function Chimera.addPlayer(player: Player): Agent

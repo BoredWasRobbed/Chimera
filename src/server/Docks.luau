@@ -13,6 +13,8 @@ local Docks = {}
 local states: { [string]: DockState } = {}
 local reprintAt: { [string]: number } = {}
 local listeners: { (string, DockState) -> () } = {}
+local dormantHp: { [string]: number } = {}
+local hitListeners: { (string, boolean) -> () } = {}
 
 local function set(id: string, state: DockState)
 	if states[id] == state then
@@ -66,6 +68,7 @@ function Docks.take(id: string): boolean
 	if state ~= "stocked" and state ~= "booting" then
 		return false
 	end
+	dormantHp[id] = nil
 	set(id, "empty")
 	local at = os.clock() + Config.Shell.ReprintSeconds
 	reprintAt[id] = at
@@ -76,6 +79,30 @@ function Docks.take(id: string): boolean
 		end
 	end)
 	return true
+end
+
+-- listener(id, destroyed) runs whenever a dormant shell is hit, so the Chimera gets its alert.
+function Docks.onHit(listener: (string, boolean) -> ())
+	table.insert(hitListeners, listener)
+end
+
+-- Mercs smashing a dormant shell (300 HP). Destroying it empties the dock until it reprints.
+function Docks.damage(id: string, amount: number): string?
+	local state = states[id]
+	if (state ~= "stocked" and state ~= "booting") or amount <= 0 then
+		return nil
+	end
+	local hp = (dormantHp[id] or Config.Combat.DormantHP) - amount
+	local destroyed = hp <= 0
+	if destroyed then
+		Docks.take(id)
+	else
+		dormantHp[id] = hp
+	end
+	for _, listener in hitListeners do
+		task.spawn(listener, id, destroyed)
+	end
+	return if destroyed then "destroyed" else "hit"
 end
 
 return Docks

@@ -13,6 +13,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Docks = require(script.Parent.Docks)
 local MapData = require(script.Parent.MapData)
+local SecurityCameras = require(script.Parent.SecurityCameras)
 local Shells = require(script.Parent.Shells)
 local Sight = require(script.Parent.Sight)
 
@@ -59,6 +60,9 @@ local function evaluate(view: MercView, eye: Vector3?, eyeLead: Vector3?, shell:
 	end
 	if view.overwatchCamera then
 		local cam = MapData.cameras[view.overwatchCamera]
+		if SecurityCameras.isBroken(view.overwatchCamera) then
+			return false, "overwatch: camera shot out"
+		end
 		if cam and Sight.cameraSees(cam, shellPoints(shell, cam.origin), nil) then
 			return true, "overwatch camera"
 		end
@@ -96,10 +100,16 @@ local function seesDock(eye: Vector3, eyeLead: Vector3, dock): boolean
 	return Sight.anyClear(eye, points, dock.model) or Sight.anyClear(eyeLead, points, dock.model)
 end
 
+-- { kind, id, time, x, y, z, yaw, speed, visibility, epoch, action, actionProgress }
 local function pack(kind: string, shell: Shells.Shell, serverTime: number): { any }
 	local p = shell.state.pos
 	local v = shell.state.vel
-	return { kind, shell.id, serverTime, p.X, p.Y, p.Z, shell.yaw, math.sqrt(v.X * v.X + v.Z * v.Z), shell.visibility }
+	local action, progress = nil, 0
+	if shell.anim then
+		action = shell.anim.kind
+		progress = math.clamp((os.clock() - shell.anim.startedAt) / shell.anim.seconds, 0, 1)
+	end
+	return { kind, shell.id, serverTime, p.X, p.Y, p.Z, shell.yaw, math.sqrt(v.X * v.X + v.Z * v.Z), shell.visibility, shell.epoch, action, progress }
 end
 
 function Perception.addMerc(player: Player)
@@ -251,8 +261,8 @@ function Perception.init()
 		for player, view in views do
 			local shellView = view.shells[shell.id]
 			if shellView and shellView.visible then
-				if reason == "collapse" then
-					shellRemote:FireClient(player, { { "collapse", shell.id, workspace:GetServerTimeNow(), p.X, p.Y, p.Z, shell.yaw } })
+				if reason == "collapse" or reason == "destroyed" then
+					shellRemote:FireClient(player, { { "collapse", shell.id, workspace:GetServerTimeNow(), p.X, p.Y, p.Z, shell.yaw, reason == "destroyed" } })
 				else
 					shellRemote:FireClient(player, { { "hide", shell.id } })
 				end

@@ -1,6 +1,7 @@
--- Builds the milestone-1 graybox of Axiom Data Vault: the Core plus three wings (Server Farms,
--- Maintenance Tunnels, Office Wing) and the Insertion lobby, with 14 security cameras, 8 shell docks,
--- 11 lockable doors and 3 placeholder terminals, laid out to match src/shared/FacilityMap.
+-- Builds the graybox of Axiom Data Vault: the Core plus three wings (Server Farms, Maintenance Tunnels,
+-- Office Wing) and the Insertion lobby, with 14 security cameras, 8 shell docks, 11 lockable doors,
+-- 3 placeholder terminals, 5 charging stations and 10 Overload traps, laid out to match
+-- src/shared/FacilityMap.
 --
 -- A one-time generator, not game code: Rojo syncs it to ServerStorage.DevTools and nothing requires it
 -- at runtime. Running it REPLACES Workspace.Map and Workspace.Facility, so hand edits made in Studio
@@ -138,6 +139,30 @@ local DOCKS = {
 	{ id = "DOCK_MT_BOILER", room = "MT_BOILER", name = "Boiler Room dock", pos = { 207, 25 }, face = { 190, 10 } },
 	{ id = "DOCK_OW_CUBE", room = "OW_CUBICLES", name = "Cubicle Floor dock", pos = { -185, -51 }, face = { -170, -40 } },
 	{ id = "DOCK_OW_CONF", room = "OW_CONFERENCE", name = "Conference Room dock", pos = { -175, 87 }, face = { -160, 75 } },
+}
+
+-- Flashlight charging stations: mercs stand on the pad to recharge (5 on the full map).
+local STATIONS = {
+	{ id = "STATION_INSERTION", pos = { 16, 76 }, face = { 0, 76 } },
+	{ id = "STATION_CORE", pos = { 50, 20 }, face = { 40, 20 } },
+	{ id = "STATION_RECEPTION", pos = { -100, 14 }, face = { -90, 14 } },
+	{ id = "STATION_PIPERUN", pos = { 145, 10 }, face = { 135, 10 } },
+	{ id = "STATION_RACKHALL", pos = { -50, -110 }, face = { -40, -110 } },
+}
+
+-- Overload targets: steam valves and power conduits on the walls. `target` is what the Chimera aims at;
+-- mercs who walk near `floor` set an armed trap off.
+local TRAPS = {
+	{ id = "TRAP_PIPE_N", kind = "Steam", room = "MT_PIPERUN", target = { 121.4, 6, -80 }, floor = { 126, -80 } },
+	{ id = "TRAP_PIPE_S", kind = "Steam", room = "MT_PIPERUN", target = { 150.6, 6, 0 }, floor = { 146, 0 } },
+	{ id = "TRAP_BOILER", kind = "Steam", room = "MT_BOILER", target = { 180, 4, -5.6 }, floor = { 180, 0 } },
+	{ id = "TRAP_TUNNEL", kind = "Steam", room = "MT_TUNNEL", target = { 80, 6, 5.6 }, floor = { 80, 1 } },
+	{ id = "TRAP_COLD", kind = "Steam", room = "SF_COLDAISLE", target = { 136, 6, -150.6 }, floor = { 136, -146 } },
+	{ id = "TRAP_RACK_W", kind = "Conduit", room = "SF_RACKHALL", target = { -54.6, 3, -138 }, floor = { -51, -138 } },
+	{ id = "TRAP_RACK_E", kind = "Conduit", room = "SF_RACKHALL", target = { 54.6, 3, -112 }, floor = { 51, -112 } },
+	{ id = "TRAP_CORE", kind = "Conduit", room = "CORE", target = { -58.6, 3, -30 }, floor = { -55, -30 } },
+	{ id = "TRAP_CUBE", kind = "Conduit", room = "OW_CUBICLES", target = { -150, 3, -54.6 }, floor = { -150, -51 } },
+	{ id = "TRAP_LOBBY", kind = "Conduit", room = "OW_LOBBY", target = { -70, 3, 20.6 }, floor = { -70, 17 } },
 }
 
 -- Placeholder Mainframe Terminals (reboots arrive in milestone 3), one per wing.
@@ -365,6 +390,46 @@ local function buildTerminals(map: Folder)
 	end
 end
 
+local function buildStations(map: Folder, facility: Folder)
+	local props = map:FindFirstChild("Props") :: Folder
+	local stations = facility:FindFirstChild("Stations") :: Folder
+	for _, def in STATIONS do
+		local floor = Vector3.new(def.pos[1], 0, def.pos[2])
+		local facing = CFrame.lookAt(floor, Vector3.new(def.face[1], 0, def.face[2]))
+		local model = Instance.new("Model")
+		model.Name = def.id
+		model:SetAttribute("StationId", def.id)
+		part(model, "Pad", Vector3.new(0.3, 5, 5), CFrame.new(floor + Vector3.new(0, 0.15, 0)) * CFrame.Angles(0, 0, math.pi / 2), Color3.fromRGB(255, 235, 170), Enum.Material.Neon, { Shape = Enum.PartType.Cylinder, CanCollide = false, CanTouch = false, CanQuery = false, Transparency = 0.5 })
+		model.Parent = stations
+		local post = part(props, "ChargingPost", Vector3.new(1, 4, 1), facing * CFrame.new(0, 2, 2.2), C.metal, Enum.Material.Metal)
+		part(post, "Light", Vector3.new(0.7, 0.5, 0.1), facing * CFrame.new(0, 3.4, 1.65), Color3.fromRGB(255, 235, 170), Enum.Material.Neon, NOT_SOLID)
+	end
+end
+
+local function buildTraps(facility: Folder)
+	local traps = facility:FindFirstChild("Traps") :: Folder
+	for _, def in TRAPS do
+		local target = Vector3.new(def.target[1], def.target[2], def.target[3])
+		local floor = Vector3.new(def.floor[1], 0.1, def.floor[2])
+		local facing = CFrame.lookAt(target, Vector3.new(floor.X, target.Y, floor.Z))
+		local model = Instance.new("Model")
+		model.Name = def.id
+		model:SetAttribute("TrapKind", def.kind)
+		model:SetAttribute("Room", def.room)
+		model:SetAttribute("TargetKind", "Overload")
+		model:SetAttribute("TargetId", def.id)
+		if def.kind == "Steam" then
+			part(model, "Target", Vector3.new(0.4, 1.8, 1.8), facing * CFrame.Angles(0, math.pi / 2, 0), Color3.fromRGB(190, 145, 70), Enum.Material.Metal, { Shape = Enum.PartType.Cylinder, CanCollide = false, CanTouch = false })
+			part(model, "Stub", Vector3.new(0.8, 0.8, 1.2), facing * CFrame.new(0, 0, 0.5), C.metal, Enum.Material.Metal, NOT_SOLID)
+		else
+			part(model, "Target", Vector3.new(2, 2.6, 0.6), facing, Color3.fromRGB(70, 74, 80), Enum.Material.Metal, NOT_SOLID)
+			part(model, "Strip", Vector3.new(1.6, 0.2, 0.1), facing * CFrame.new(0, 0.9, -0.32), Color3.fromRGB(150, 210, 255), Enum.Material.Neon, NOT_SOLID)
+		end
+		part(model, "Floor", Vector3.new(1, 0.2, 1), CFrame.new(floor), C.off, nil, MARKER)
+		model.Parent = traps
+	end
+end
+
 local function rack(props: Folder, x0: number, x1: number, z: number)
 	local length = x1 - x0
 	local cf = CFrame.new((x0 + x1) / 2, 5, z)
@@ -505,7 +570,7 @@ return function()
 	end
 	local facility = Instance.new("Folder")
 	facility.Name = "Facility"
-	for _, name in { "Cameras", "Lights", "Rooms", "Spawns" } do
+	for _, name in { "Cameras", "Lights", "Rooms", "Spawns", "Stations", "Traps" } do
 		folder(facility, name)
 	end
 
@@ -517,6 +582,8 @@ return function()
 	buildTerminals(map)
 	task.wait()
 	buildProps(map, facility)
+	buildStations(map, facility)
+	buildTraps(facility)
 	map.Parent = workspace
 	task.wait()
 	facility.Parent = workspace

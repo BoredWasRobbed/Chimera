@@ -42,7 +42,8 @@ local yawOffset, pitchOffset, fov = 0, 0, CAM.Fov
 local dragging = false
 local hover: Target? = nil
 local hoverParams = RaycastParams.new()
-local markers: { { button: TextButton, camera: FacilityMap.CameraInfo, label: string } } = {}
+local markers: { { button: TextButton, listButton: TextButton, camera: FacilityMap.CameraInfo, label: string } } = {}
+local cursorPoint: Vector3? = nil -- the world point under the cursor, for Static Decoy
 local hiddenParts: { BasePart } = {}
 local connections: { RBXScriptConnection } = {}
 local ui: { [string]: any } = {}
@@ -97,7 +98,17 @@ local function placeMarkers()
 	local center = Vector2.new((minX + maxX) / 2, (minY + maxY) / 2)
 	local half = Vector2.new((maxX - minX) / 2, (maxY - minY) / 2)
 	local placed: { Vector2 } = {}
+	local serverNow = workspace:GetServerTimeNow()
 	for _, marker in markers do
+		-- A shot-out camera is offline until it reboots.
+		local brokenUntil = marker.camera.model:GetAttribute("BrokenUntil")
+		local offline = type(brokenUntil) == "number" and brokenUntil > serverNow
+		local label = if offline then `{marker.label} ✕ {math.ceil(brokenUntil - serverNow)}s` else marker.label
+		local color = if offline then Hud.DIM else Hud.CYAN
+		marker.button.TextColor3 = color
+		marker.listButton.TextColor3 = color
+		marker.listButton.Text = label
+
 		local world = marker.camera.lens.Position + Vector3.new(0, 1.2, 0)
 		local projected = camera:WorldToViewportPoint(world)
 		local point = Vector2.new(projected.X, projected.Y)
@@ -107,7 +118,7 @@ local function placeMarkers()
 		end
 		local inside = not behind and point.X >= minX and point.X <= maxX and point.Y >= minY and point.Y <= maxY
 		if inside then
-			marker.button.Text = `◉ {marker.label}`
+			marker.button.Text = `◉ {label}`
 		else
 			local d = point - center
 			if d.Magnitude < 1 then
@@ -115,7 +126,7 @@ local function placeMarkers()
 			end
 			local scale = math.min(half.X / math.max(math.abs(d.X), 1e-3), half.Y / math.max(math.abs(d.Y), 1e-3))
 			point = center + d * scale
-			marker.button.Text = if d.X < 0 then `◀ {marker.label}` else `{marker.label} ▶`
+			marker.button.Text = if d.X < 0 then `◀ {label}` else `{label} ▶`
 		end
 		-- Stack markers that would cover each other, moving toward the middle of the screen.
 		local step = if point.Y > center.Y then -30 else 30
@@ -161,7 +172,6 @@ local function buildMarkers()
 		button.Activated:Connect(function()
 			requestHop(linkId)
 		end)
-		table.insert(markers, { button = button, camera = cam, label = label })
 
 		local listButton = Hud.button(ui.links, {
 			Name = `Link_{linkId}`,
@@ -173,6 +183,7 @@ local function buildMarkers()
 		listButton.Activated:Connect(function()
 			requestHop(linkId)
 		end)
+		table.insert(markers, { button = button, listButton = listButton, camera = cam, label = label })
 	end
 end
 
@@ -278,12 +289,13 @@ local function updateHover()
 	local camera = workspace.CurrentCamera
 	local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
 	local result = workspace:Raycast(ray.Origin, ray.Direction * Config.Interface.CameraRange, hoverParams)
+	cursorPoint = if result then result.Position else nil
 	if result then
 		local kind, id = FacilityMap.targetOf(result.Instance)
 		if kind and type(id) == "string" then
 			if kind ~= "TakeShell" or DockViews.state(id) == "stocked" then
 				local adornee = result.Instance
-				if kind == "TakeShell" or kind == "LockDoor" or kind == "CorruptTerminal" then
+				if kind == "TakeShell" or kind == "LockDoor" or kind == "CorruptTerminal" or kind == "Overload" then
 					adornee = result.Instance:FindFirstAncestorOfClass("Model") or adornee
 				elseif kind == "Blackout" then
 					adornee = result.Instance.Parent or adornee
@@ -369,6 +381,10 @@ function FacilityView.init(clientFolder: Folder, doorTargets: Folder, onRequestH
 	cameras = FacilityMap.cameras()
 	local map, facility = FacilityMap.folders()
 	local include = { map, facility:WaitForChild("Lights"), DockViews.folder(), doorTargets }
+	local traps = facility:FindFirstChild("Traps")
+	if traps then
+		table.insert(include, traps)
+	end
 	hoverParams.FilterType = Enum.RaycastFilterType.Include
 	hoverParams.FilterDescendantsInstances = include
 	TargetHighlight.init(clientFolder)
@@ -408,8 +424,9 @@ function FacilityView.start(cameraId: string)
 	ui.hints = Hud.hints({
 		"Click a marker or 1-9  hop to a linked camera",
 		"Right-drag or A/D/W/S  look   Scroll  zoom",
-		"E  Interface on what you aim at",
+		"E  Interface (incl. Overload a pipe/conduit)",
 		"Hold E on a stocked dock  take its shell",
+		"F  Static Decoy where you point",
 	}, UDim2.fromOffset(24, 76), Vector2.zero)
 	table.insert(connections, UserInputService.InputBegan:Connect(onInputBegan))
 	table.insert(connections, UserInputService.InputEnded:Connect(onInputEnded))
@@ -456,6 +473,11 @@ function FacilityView.endRelink()
 	if active then
 		buildMarkers()
 	end
+end
+
+-- Where the cursor points in the world (Static Decoy aims here).
+function FacilityView.aimPoint(): Vector3?
+	return cursorPoint
 end
 
 function FacilityView.target(): Target?

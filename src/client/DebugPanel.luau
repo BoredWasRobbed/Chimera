@@ -1,5 +1,6 @@
--- Studio-only DEV panel and test hook. Lets one tester switch roles, spawn a patrolling test shell,
--- cycle its visibility state and watch what the server decides this merc perceives.
+-- Studio-only DEV panel and test hook, so one tester can exercise both sides alone: switch role, run a
+-- test shell that patrols or hunts, cycle its visibility, watch what the server decides this merc
+-- perceives, spawn a dummy merc to down and assimilate, switch class, down yourself, respawn.
 -- ReplicatedStorage.ChimeraClientHook (BindableFunction, this client only) returns JSON client state.
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -12,23 +13,50 @@ local DebugPanel = {}
 
 local player = Players.LocalPlayer
 
+local BUTTONS = {
+	{ "SwitchRole", "Switch role", "switchRole" },
+	{ "ToggleBot", "Test shell on/off", "toggleBot" },
+	{ "BotHunt", "Test shell hunts/patrols", "botHunt" },
+	{ "CycleVisibility", "Cycle visibility", "cycleVisibility" },
+	{ "Overlay", "Perception overlay", "overlay" },
+	{ "SpawnDummy", "Spawn dummy merc", "spawnDummy" },
+	{ "CycleClass", "Cycle class", "cycleClass" },
+	{ "DownMe", "Down me", "downMe" },
+	{ "Respawn", "Respawn me", "respawn" },
+}
+
 function DebugPanel.init(describe: () -> { [string]: any }, commands: { [string]: (...any) -> any })
 	local remote = Net.get("Debug")
 	local gui = Hud.gui()
 	local overlayOn = false
+	local open = false
 
-	-- Bottom-right, out of the way of the camera markers that clamp to the top and side edges.
 	local panel = Hud.frame(gui, {
 		Name = "DevPanel",
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -16, 1, -16),
-		Size = UDim2.fromOffset(200, 176),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -16, 0, 100),
+		Size = UDim2.fromOffset(210, 26 + #BUTTONS * 32),
 		BackgroundTransparency = 0.4,
+		Visible = false,
 		ZIndex = 40,
 	})
+	local toggle = Hud.button(gui, {
+		Name = "DevToggle",
+		Text = "DEV ▾",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -16, 0, 72),
+		Size = UDim2.fromOffset(80, 24),
+		TextSize = 13,
+		ZIndex = 41,
+	})
+	toggle.Activated:Connect(function()
+		open = not open
+		panel.Visible = open
+		toggle.Text = if open then "DEV ▴" else "DEV ▾"
+	end)
 	Hud.text(panel, {
-		Text = "DEV (Studio only)",
-		TextSize = 14,
+		Text = "Studio only",
+		TextSize = 13,
 		TextColor3 = Hud.DIM,
 		Position = UDim2.fromOffset(8, 4),
 		Size = UDim2.new(1, -16, 0, 18),
@@ -36,41 +64,34 @@ function DebugPanel.init(describe: () -> { [string]: any }, commands: { [string]
 	})
 	local overlay = Hud.text(gui, {
 		Name = "PerceptionOverlay",
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -16, 1, -200),
-		Size = UDim2.fromOffset(320, 120),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -236, 0, 100),
+		Size = UDim2.fromOffset(340, 100),
 		TextSize = 14,
-		TextYAlignment = Enum.TextYAlignment.Bottom,
+		TextYAlignment = Enum.TextYAlignment.Top,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Visible = false,
 		ZIndex = 40,
 	})
 
-	local buttons = {
-		{ "SwitchRole", "Switch role", function()
-			remote:FireServer("switchRole")
-		end },
-		{ "ToggleBot", "Test shell on/off", function()
-			remote:FireServer("toggleBot")
-		end },
-		{ "CycleVisibility", "Cycle visibility", function()
-			remote:FireServer("cycleVisibility")
-		end },
-		{ "Overlay", "Perception overlay", function()
-			overlayOn = not overlayOn
-			overlay.Visible = overlayOn
-			remote:FireServer("overlay", overlayOn)
-		end },
-	}
-	for index, def in buttons do
+	for index, def in BUTTONS do
 		local button = Hud.button(panel, {
 			Name = def[1],
 			Text = def[2],
-			Position = UDim2.fromOffset(8, 26 + (index - 1) * 36),
-			Size = UDim2.new(1, -16, 0, 30),
+			Position = UDim2.fromOffset(8, 24 + (index - 1) * 32),
+			Size = UDim2.new(1, -16, 0, 28),
+			TextSize = 14,
 			ZIndex = 41,
 		})
-		button.Activated:Connect(def[3])
+		button.Activated:Connect(function()
+			if def[3] == "overlay" then
+				overlayOn = not overlayOn
+				overlay.Visible = overlayOn
+				remote:FireServer("overlay", overlayOn)
+			else
+				remote:FireServer(def[3])
+			end
+		end)
 	end
 
 	remote.OnClientEvent:Connect(function(kind, value)

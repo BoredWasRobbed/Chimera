@@ -1,4 +1,5 @@
--- Room lights and the Blackout Interface action (stub for milestone 1: the room goes dark for 20 s).
+-- Room lights: the Blackout Interface action (the room goes dark for 20 s), and fixtures that mercs
+-- shoot out, which stay dark for the rest of the match.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -9,6 +10,32 @@ local Lights = {}
 
 local darkUntil: { [string]: number } = {}
 local saved: { [BasePart]: { color: Color3, material: Enum.Material } } = {}
+local broken: { [BasePart]: boolean } = {}
+
+local function setFixtureLit(fixture: BasePart, lit: boolean)
+	if not saved[fixture] then
+		saved[fixture] = { color = fixture.Color, material = fixture.Material }
+	end
+	local original = saved[fixture]
+	lit = lit and not broken[fixture]
+	fixture.Material = if lit then original.material else Enum.Material.SmoothPlastic
+	fixture.Color = if lit then original.color else Color3.fromRGB(30, 30, 32)
+	for _, light in fixture:GetDescendants() do
+		if light:IsA("Light") then
+			light.Enabled = lit
+		end
+	end
+end
+
+-- A merc shot this fixture. Returns true if it was still working.
+function Lights.breakFixture(fixture: BasePart): boolean
+	if broken[fixture] or fixture.Name ~= "Fixture" then
+		return false
+	end
+	setFixtureLit(fixture, false)
+	broken[fixture] = true
+	return true
+end
 
 local function setRoomLit(roomId: string, lit: boolean)
 	local room = MapData.rooms[roomId]
@@ -16,17 +43,7 @@ local function setRoomLit(roomId: string, lit: boolean)
 		return
 	end
 	for _, fixture in room.fixtures do
-		if not saved[fixture] then
-			saved[fixture] = { color = fixture.Color, material = fixture.Material }
-		end
-		local original = saved[fixture]
-		fixture.Material = if lit then original.material else Enum.Material.SmoothPlastic
-		fixture.Color = if lit then original.color else Color3.fromRGB(30, 30, 32)
-		for _, light in fixture:GetDescendants() do
-			if light:IsA("Light") then
-				light.Enabled = lit
-			end
-		end
+		setFixtureLit(fixture, lit)
 	end
 	if room.panel then
 		local indicator = room.panel:FindFirstChild("Indicator")

@@ -23,6 +23,20 @@ type SprintState = {
 local states: { [Player]: SprintState } = {}
 local stateRemote: RemoteEvent
 
+-- Walk or sprint speed, scaled by being downed (crawl at 30%) and by any slow (a conduit trap).
+-- The client runs the same rule to predict its own speed.
+function MercMovement.speedFor(character: Model, sprinting: boolean): number
+	local speed = if sprinting then M.SprintSpeed else M.WalkSpeed
+	if character:GetAttribute("Downed") == true then
+		speed = M.WalkSpeed * Config.Health.DownedSpeedScale
+	end
+	local slowUntil = character:GetAttribute("SlowUntil")
+	if type(slowUntil) == "number" and workspace:GetServerTimeNow() < slowUntil then
+		speed *= character:GetAttribute("SlowScale") or 1
+	end
+	return speed
+end
+
 local function sync(player: Player, s: SprintState)
 	s.lastSync = os.clock()
 	stateRemote:FireClient(player, s.stamina, s.exhausted)
@@ -40,7 +54,8 @@ local function update(dt: number)
 		local v = root.AssemblyLinearVelocity
 		local moving = Vector3.new(v.X, 0, v.Z).Magnitude > 2
 		local wasExhausted = s.exhausted
-		if s.wantSprint and moving and not s.exhausted and s.stamina > 0 then
+		local downed = character:GetAttribute("Downed") == true
+		if s.wantSprint and moving and not downed and not s.exhausted and s.stamina > 0 then
 			s.sprinting = true
 			s.lastSprintAt = now
 			s.stamina = math.max(0, s.stamina - dt)
@@ -57,7 +72,7 @@ local function update(dt: number)
 				s.exhausted = false
 			end
 		end
-		local speed = if s.sprinting then M.SprintSpeed else M.WalkSpeed
+		local speed = MercMovement.speedFor(character, s.sprinting)
 		if humanoid.WalkSpeed ~= speed then
 			humanoid.WalkSpeed = speed
 		end

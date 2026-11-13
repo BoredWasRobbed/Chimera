@@ -17,6 +17,10 @@
 --     RecLight             lit red while the Chimera watches through this camera
 --   Lights/<RoomId>        Folder: TargetKind="Blackout", TargetId=<RoomId>; light fixtures and a Panel part
 --   Rooms/<RoomId>         invisible box part covering the room, attribute DisplayName
+--   Stations/<Id>          Model: a flashlight charging station; its Pad part is where mercs stand
+--   Traps/<Id>             Model: TrapKind ("Steam" or "Conduit"), Room, TargetKind="Overload", TargetId
+--     Target               what the Chimera aims at to arm it (a valve or junction box)
+--     Floor                invisible marker on the floor; mercs near it set the trap off
 local Config = require(script.Parent.Config)
 local CameraMath = require(script.Parent.CameraMath)
 
@@ -202,6 +206,44 @@ function FacilityMap.rooms(): { [string]: RoomInfo }
 				bounds = bounds,
 				fixtures = fixtures,
 				panel = panel,
+			}
+		end
+	end
+	return out
+end
+
+export type StationInfo = { id: string, model: Model, pad: BasePart }
+export type TrapInfo = { id: string, kind: string, room: string, model: Model, target: BasePart, floor: Vector3 }
+
+function FacilityMap.stations(): { [string]: StationInfo }
+	local _, facility = FacilityMap.folders()
+	local out = {}
+	local folder = facility:FindFirstChild("Stations")
+	for _, model in (if folder then folder:GetChildren() else {}) do
+		local pad = model:FindFirstChild("Pad")
+		if pad and pad:IsA("BasePart") then
+			out[model.Name] = { id = model.Name, model = model, pad = pad }
+		end
+	end
+	return out
+end
+
+function FacilityMap.traps(): { [string]: TrapInfo }
+	local _, facility = FacilityMap.folders()
+	local out = {}
+	local folder = facility:FindFirstChild("Traps")
+	for _, model in (if folder then folder:GetChildren() else {}) do
+		local id = model:GetAttribute("TargetId")
+		local target = model:FindFirstChild("Target")
+		local floor = model:FindFirstChild("Floor")
+		if type(id) == "string" and target and target:IsA("BasePart") and floor and floor:IsA("BasePart") then
+			out[id] = {
+				id = id,
+				kind = model:GetAttribute("TrapKind") or "Steam",
+				room = model:GetAttribute("Room") or "",
+				model = model,
+				target = target,
+				floor = floor.Position,
 			}
 		end
 	end

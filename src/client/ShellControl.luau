@@ -1,7 +1,11 @@
 -- Driving a shell from the Chimera's client. The server owns the shell's position; this client runs the
 -- same ShellMotor on its own inputs so the body responds instantly, sends every input to the server,
 -- and when the server's authoritative state for an input disagrees with the prediction, rewinds to it
--- and replays the newer inputs, smoothing the visual difference away.
+-- and replays the newer inputs, smoothing the visual difference away. Slows, staggers and roots reach
+-- this client as the server's speed scale, which the prediction uses from then on.
+-- It also finds what the shell's actions would hit: the Interface target under the crosshair, the
+-- System Leap node nearest the crosshair, and a downed merc in reach to Assimilate.
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -15,6 +19,7 @@ local Hud = require(script.Parent.Hud)
 local TargetHighlight = require(script.Parent.TargetHighlight)
 
 export type Target = { kind: string, id: string, instance: Instance }
+export type LeapNode = { id: string, name: string, position: Vector3 }
 
 type HistoryEntry = { input: ShellMotor.Input, state: ShellMotor.State }
 
@@ -34,6 +39,9 @@ type Active = {
 	phase: number,
 	rig: Model,
 	corrections: number,
+	speedScale: number,
+	action: { kind: string, startedAt: number, seconds: number }?,
+	bodyHidden: boolean,
 }
 
 local ShellControl = {}
@@ -49,6 +57,11 @@ local folder: Folder
 local cameraParams = RaycastParams.new()
 local aimParams = RaycastParams.new()
 local target: Target? = nil
+local aimPoint: Vector3? = nil
+local leapNodes: { LeapNode } = {}
+local leapCandidate: LeapNode? = nil
+local assimilateCandidate: Model? = nil
+local obstacleAt = 0
 local ui: { [string]: any } = {}
 local testMove: { forward: number, right: number, jump: boolean }? = nil -- Studio tests drive the shell here
 
@@ -72,14 +85,31 @@ local function sampleInput(a: Active): ShellMotor.Input
 	if move.Magnitude > 1 then
 		move = move.Unit
 	end
-	return { mx = move.X, mz = move.Z, jump = jump, yaw = yaw }
+	return { mx = move.X, mz = move.Z, jump = jump, yaw = yaw, speedScale = a.speedScale }
 end
 
-local function updateAim(camera: Camera, a: Active)
+-- Merc bodies (players' and Studio dummies') the shell can't walk through, as this client sees them.
+local function refreshObstacles()
+	local list = {}
+	for _, other in Players:GetPlayers() do
+		if other.Character and other:GetAttribute("Role") == "Merc" then
+			table.insert(list, other.Character)
+		end
+	end
+	for _, child in workspace:GetChildren() do
+		if child:IsA("Model") and child:GetAttribute("MercTag") and not Players:GetPlayerFromCharacter(child) then
+			table.insert(list, child)
+		end
+	end
+	ShellMotor.setObstacles(list)
+end
+
+local function updateAim(camera: Camera, a: Active, feet: Vector3)
 	target = nil
 	local origin = camera.CFrame.Position
-	local direction = camera.CFrame.LookVector * (Config.Shell.SightRange + CAMERA_OFFSET.Magnitude)
-	local result = workspace:Raycast(origin, direction, aimParams)
+	local look = camera.CFrame.LookVector
+	local result = workspace:Raycast(origin, look * (Config.Shell.SightRange + CAMERA_OFFSET.Magnitude), aimParams)
+	aimPoint = if result then result.Position else nil
 	if result then
 		local kind, id = FacilityMap.targetOf(result.Instance)
 		if kind and kind ~= "TakeShell" and type(id) == "string" then
@@ -88,6 +118,35 @@ local function updateAim(camera: Camera, a: Active)
 		end
 	end
 	TargetHighlight.set(if target then target.instance else nil)
+
+	-- System Leap: the camera or terminal within range closest to the crosshair.
+	leapCandidate = nil
+	local bestDot = math.cos(math.rad(25))
+	for _, node in leapNodes do
+		local offset = node.position - origin
+		if (node.position - feet).Magnitude <= Config.Modules.SystemLeap.Range and offset.Magnitude > 4 then
+			local dot = look:Dot(offset.Unit)
+			if dot > bestDot then
+				bestDot = dot
+				leapCandidate = node
+			end
+		end
+	end
+
+	-- Assimilate: the nearest downed merc in reach.
+	assimilateCandidate = nil
+	local chest = feet + Vector3.new(0, 3, 0)
+	local bestDistance = Config.Health.AssimilateRange
+	for _, model in workspace:GetChildren() do
+		if model:IsA("Model") and model:GetAttribute("Downed") == true then
+			local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
+			local distance = root and (root.Position - chest).Magnitude
+			if distance and distance <= bestDistance then
+				bestDistance = distance
+				assimilateCandidate = model
+			end
+		end
+	end
 end
 
 local function render(dt: number)
@@ -99,6 +158,12 @@ local function render(dt: number)
 	local delta = UserInputService:GetMouseDelta()
 	a.yaw -= math.rad(delta.X * MOUSE_SENSITIVITY)
 	a.pitch = math.clamp(a.pitch - math.rad(delta.Y * MOUSE_SENSITIVITY), -1.2, 1.0)
+
+	local now = os.clock()
+	if now - obstacleAt > 0.5 then
+		obstacleAt = now
+		refreshObstacles()
+	end
 
 	-- Fixed-step prediction, one input per tick, exactly like the server consumes them.
 	a.accumulator += dt
@@ -127,7 +192,16 @@ local function render(dt: number)
 	a.correction *= math.exp(-dt * 12)
 	local speed = Vector3.new(a.state.vel.X, 0, a.state.vel.Z).Magnitude
 	a.phase += dt * speed * 0.55
-	ShellRig.pose(a.rig, CFrame.new(feet) * CFrame.Angles(0, a.yaw, 0), a.phase, math.clamp(speed / Config.Shell.WalkSpeed, 0, 1), os.clock())
+	local action = nil
+	if a.action then
+		local progress = (now - a.action.startedAt) / a.action.seconds
+		if progress >= 1 then
+			a.action = nil
+		else
+			action = { kind = a.action.kind, progress = progress }
+		end
+	end
+	ShellRig.pose(a.rig, CFrame.new(feet) * CFrame.Angles(0, a.yaw, 0), a.phase, math.clamp(speed / Config.Shell.WalkSpeed, 0, 1), now, action)
 
 	local camera = workspace.CurrentCamera
 	local pivot = feet + Vector3.new(0, 4.4, 0)
@@ -139,12 +213,28 @@ local function render(dt: number)
 	camera.CameraType = Enum.CameraType.Scriptable
 	camera.FieldOfView = 70
 	camera.CFrame = CFrame.new(cameraPosition) * rotation
-	updateAim(camera, a)
+	-- With a wall right behind, the camera ends up inside the body: hide it rather than fill the view.
+	local hideBody = (cameraPosition - pivot).Magnitude < 3
+	if hideBody ~= a.bodyHidden then
+		a.bodyHidden = hideBody
+		for _, part in a.rig:GetChildren() do
+			if part:IsA("BasePart") then
+				part.LocalTransparencyModifier = if hideBody then 1 else 0
+			end
+		end
+	end
+	updateAim(camera, a, feet)
 end
 
-local function onAuth(nonce: any, ackSeq: any, x: any, y: any, z: any, vx: any, vy: any, vz: any, grounded: any)
+local function onAuth(nonce: any, ackSeq: any, x: any, y: any, z: any, vx: any, vy: any, vz: any, grounded: any, speedScale: any)
 	local a = active
-	if not a or nonce ~= a.nonce or type(ackSeq) ~= "number" or ackSeq <= a.lastAck then
+	if not a or nonce ~= a.nonce or type(ackSeq) ~= "number" then
+		return
+	end
+	if type(speedScale) == "number" then
+		a.speedScale = speedScale
+	end
+	if ackSeq <= a.lastAck then
 		return
 	end
 	a.lastAck = ackSeq
@@ -168,6 +258,7 @@ local function onAuth(nonce: any, ackSeq: any, x: any, y: any, z: any, vx: any, 
 	for seq = ackSeq + 1, a.seq do
 		local later = a.history[seq]
 		if later then
+			later.input.speedScale = a.speedScale
 			s = ShellMotor.step(s, later.input, DT)
 			later.state = s
 		end
@@ -175,10 +266,11 @@ local function onAuth(nonce: any, ackSeq: any, x: any, y: any, z: any, vx: any, 
 	local shift = a.state.pos - s.pos
 	if shift.Magnitude > 6 then
 		a.correction = Vector3.zero
+		a.prev = s
 	else
 		a.correction += shift
+		a.prev = { pos = a.prev.pos - shift, vel = a.prev.vel, grounded = a.prev.grounded }
 	end
-	a.prev = { pos = a.prev.pos - shift, vel = a.prev.vel, grounded = a.prev.grounded }
 	a.state = s
 end
 
@@ -190,13 +282,27 @@ function ShellControl.init(clientFolder: Folder, doorTargets: Folder)
 	cameraParams.FilterType = Enum.RaycastFilterType.Include
 	cameraParams.FilterDescendantsInstances = { map }
 	aimParams.FilterType = Enum.RaycastFilterType.Include
-	aimParams.FilterDescendantsInstances = { map, facility:WaitForChild("Lights"), doorTargets }
+	local include = { map, facility:WaitForChild("Lights"), doorTargets }
+	local traps = facility:FindFirstChild("Traps")
+	if traps then
+		table.insert(include, traps)
+	end
+	aimParams.FilterDescendantsInstances = include
+	for id, cam in FacilityMap.cameras() do
+		table.insert(leapNodes, { id = id, name = cam.displayName, position = cam.origin })
+	end
+	for id, terminal in FacilityMap.terminals() do
+		local console = terminal.model.PrimaryPart
+		if console then
+			table.insert(leapNodes, { id = id, name = terminal.displayName, position = console.Position })
+		end
+	end
 end
 
 function ShellControl.start(info: { [string]: any })
 	ShellControl.stop()
 	local feet = Vector3.new(info.x, info.y, info.z)
-	local rig = ShellRig.build("OwnShell")
+	local rig = ShellRig.build("OwnShell", true)
 	ShellRig.setLook(rig, "owner")
 	rig.Parent = folder
 	local state = ShellMotor.new(feet)
@@ -216,7 +322,11 @@ function ShellControl.start(info: { [string]: any })
 		phase = 0,
 		rig = rig,
 		corrections = 0,
+		speedScale = 1,
+		action = nil,
+		bodyHidden = false,
 	}
+	refreshObstacles()
 	local gui = Hud.gui()
 	ui.crosshair = Hud.frame(gui, {
 		Name = "Crosshair",
@@ -227,8 +337,9 @@ function ShellControl.start(info: { [string]: any })
 		BackgroundTransparency = 0.2,
 	})
 	ui.hints = Hud.hints({
-		"WASD  move   Space  jump   Mouse  look",
-		"E  Interface on what you aim at",
+		"WASD move   Space jump   Mouse look",
+		"LMB Energy Claws   E Interface / hold E Assimilate",
+		"R System Leap   F Static Decoy (aim at the floor)",
 		"Hold Q  leave the shell (1 s)",
 	})
 	UserInputService.MouseIconEnabled = false
@@ -243,6 +354,9 @@ function ShellControl.stop()
 	active.rig:Destroy()
 	active = nil
 	target = nil
+	aimPoint = nil
+	leapCandidate = nil
+	assimilateCandidate = nil
 	TargetHighlight.set(nil)
 	for _, key in { "crosshair", "hints" } do
 		if ui[key] then
@@ -262,6 +376,31 @@ function ShellControl.target(): Target?
 	return target
 end
 
+function ShellControl.aimPoint(): Vector3?
+	return aimPoint
+end
+
+function ShellControl.leapCandidate(): LeapNode?
+	return leapCandidate
+end
+
+function ShellControl.assimilateCandidate(): Model?
+	return assimilateCandidate
+end
+
+-- Play a body action locally (a claw swipe now; assimilation or a leap channel as the server confirms).
+function ShellControl.playAction(kind: string, seconds: number)
+	if active then
+		active.action = { kind = kind, startedAt = os.clock(), seconds = seconds }
+	end
+end
+
+function ShellControl.stopAction()
+	if active then
+		active.action = nil
+	end
+end
+
 function ShellControl.promptAnchor(): Vector2
 	local viewport = workspace.CurrentCamera.ViewportSize
 	return Vector2.new(viewport.X / 2 + 16, viewport.Y / 2 + 16)
@@ -278,9 +417,12 @@ function ShellControl.describe(): { [string]: any }?
 		seq = a.seq,
 		lastAck = a.lastAck,
 		corrections = a.corrections,
+		speedScale = a.speedScale,
 		pos = { math.floor(p.X * 100) / 100, math.floor(p.Y * 100) / 100, math.floor(p.Z * 100) / 100 },
 		yaw = a.yaw,
 		target = target and { kind = target.kind, id = target.id },
+		leap = leapCandidate and leapCandidate.id,
+		assimilate = assimilateCandidate and assimilateCandidate.Name,
 	}
 end
 
@@ -294,6 +436,18 @@ function ShellControl.setTestInput(yaw: number?, forward: number?, right: number
 	else
 		testMove = { forward = forward or 0, right = right or 0, jump = jump == true }
 	end
+end
+
+-- For tests: point the camera (pitch and yaw) at a world point.
+function ShellControl.testLookAt(point: Vector3)
+	local a = active
+	if not a then
+		return
+	end
+	local eye = a.state.pos + Vector3.new(0, 4.4, 0)
+	local d = (point - eye).Unit
+	a.yaw = math.atan2(-d.X, -d.Z)
+	a.pitch = math.asin(math.clamp(d.Y, -1, 1))
 end
 
 return ShellControl

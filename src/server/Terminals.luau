@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Cues = require(script.Parent.Cues)
 local MapData = require(script.Parent.MapData)
+local MatchEvents = require(script.Parent.MatchEvents)
 
 local Terminals = {}
 
@@ -59,6 +60,7 @@ function Terminals.corrupt(id: string): (boolean, string?)
 	lockedUntil[id] = untilTime
 	terminal.model:SetAttribute("LockedUntil", workspace:GetServerTimeNow() + settings.LockSeconds)
 	setScreen(id, "SYSTEM FAULT\nLOCKED", Color3.fromRGB(200, 90, 255))
+	MatchEvents.fire("TerminalCorrupted", { terminal = id })
 	Cues.emit("TerminalCorrupt", (terminal.screen or terminal.model.PrimaryPart or terminal.model:GetPivot()).Position, settings.SoundRange)
 	task.delay(settings.LockSeconds, function()
 		if lockedUntil[id] == untilTime then

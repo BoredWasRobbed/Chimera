@@ -90,6 +90,117 @@ Config.Cues = {
 	LockClunk = { Label = "lock clunk", SoundId = "", Volume = 0.8 },
 	DoorForced = { Label = "door forced", SoundId = "", Volume = 0.8 },
 	TerminalCorrupt = { Label = "terminal glitch", SoundId = "", Volume = 0.8 },
+	ClawSwipe = { Label = "shriek", SoundId = "", Volume = 1 },
+	ShellDestroyed = { Label = "shell destroyed", SoundId = "", Volume = 1 },
+	DormantHit = { Label = "dormant shell hit", SoundId = "", Volume = 0.6 },
+	LeapCharge = { Label = "leap charge", SoundId = "", Volume = 0.8 },
+	LeapLand = { Label = "leap arrival", SoundId = "", Volume = 0.8 },
+	TrapArmed = { Label = "hiss", SoundId = "", Volume = 0.6 },
+	SteamBurst = { Label = "steam burst", SoundId = "", Volume = 1 },
+	ConduitShock = { Label = "conduit shock", SoundId = "", Volume = 1 },
+	TripAlarm = { Label = "trip-mine alarm", SoundId = "", Volume = 1 },
+	WeldBroken = { Label = "weld breaks", SoundId = "", Volume = 1 },
+	CameraBroken = { Label = "camera shot out", SoundId = "", Volume = 0.6 },
+}
+
+-- Milestone 2: combat, visibility states, downs and assimilation.
+
+Config.Health = {
+	MercMax = 100,
+	StimHeal = 40, -- over StimSeconds, one per life
+	StimSeconds = 3,
+	BleedOutSeconds = { 45, 30, 15 }, -- first, second, later downs in a match
+	DownedSpeedScale = 0.3,
+	ReviveSeconds = 5,
+	MedicReviveSeconds = 2.5,
+	ReviveRange = 7,
+	ReviveHealth = 30,
+	AssimilateSeconds = 3,
+	AssimilateRange = 6,
+	AssimilateCancelFraction = 0.25, -- of the shell's max HP lost during the hold
+	TrapFloor = 1, -- traps and facility damage never take a merc below this
+}
+
+-- Revealed beats Exposed beats Cloaked. Perception (above) decides who receives each state.
+Config.Visibility = {
+	HitRevealSeconds = 1, -- after every hit
+	AttackRevealSeconds = 1, -- after every swipe
+	FlashRevealSeconds = 2,
+	DartRevealSeconds = 3,
+	ExposeRange = 15, -- a flashlight beam this close turns Cloaked into Exposed
+}
+
+Config.Flashlight = {
+	BatterySeconds = 200, -- a full battery, 0.5% a second
+	BeamHalfAngle = 22, -- degrees: the beam a shell must be inside
+	RenderRange = 45,
+	FlashCost = 20, -- percent of the battery
+	FlashCooldown = 20,
+	FlashRange = 12,
+	FlashHalfAngle = 30,
+	FlashStagger = 0.5,
+	ChargePerSecond = 25, -- percent, standing at a charging station
+	ChargeRange = 5,
+	ChimeraSeesBeamsWithin = 40, -- through walls, from its camera or shell
+}
+
+Config.Detection = {
+	TrackerRange = 40,
+	TrackerMinSpeed = 2, -- a shell slower than this is still, and invisible to trackers
+	TrackerInterval = 0.5,
+	HeartbeatRange = 10,
+	ScoutHeartbeatRange = 15,
+	HeartbeatInterval = 0.5,
+}
+
+-- Tuned so five mercs at ~70% accuracy burst a 1,000 HP Revealed shell in about 3 s, and one Assault
+-- alone needs about 12 s with reloads. Ammo reserves are unlimited; reloads are what costs.
+Config.Weapons = {
+	PulseRifle = { Name = "Pulse Rifle", Auto = true, Interval = 0.125, Damage = 16, Pellets = 1, Spread = 1.2, Magazine = 32, Reload = 2.5, Range = 150 },
+	Shotgun = { Name = "Shotgun", Auto = false, Interval = 1.0, Damage = 11, Pellets = 8, Spread = 6, Magazine = 6, Reload = 3.0, Range = 60, FalloffStart = 20, FalloffMin = 0.4 },
+	Sidearm = { Name = "Sidearm", Auto = false, Interval = 0.25, Damage = 20, Pellets = 1, Spread = 0.6, Magazine = 12, Reload = 1.4, Range = 150 },
+	SilencedSMG = { Name = "Silenced SMG", Auto = true, Interval = 0.09, Damage = 8, Pellets = 1, Spread = 2.0, Magazine = 36, Reload = 1.8, Range = 100, Silenced = true },
+}
+
+Config.Classes = {
+	-- Order is the order new mercs are assigned to, within each class's cap.
+	Order = { "Assault", "Technician", "Medic", "Scout" },
+	Assault = { Cap = 2, Weapon = "PulseRifle", Gear = "FragGrenade", GearCount = 2 },
+	Technician = { Cap = 2, Weapon = "Shotgun", Gear = "TripMine", GearCount = 2 },
+	Medic = { Cap = 1, Weapon = "Sidearm", Gear = "NanoRegen", GearCount = 1 },
+	Scout = { Cap = 1, Weapon = "SilencedSMG", Gear = "SensorDart", GearCount = 2 },
+}
+
+Config.Gear = {
+	FragGrenade = { Name = "Frag Grenade", Damage = 150, Radius = 10, Stagger = 1, Fuse = 2.5, ThrowSpeed = 70, Gravity = 120 },
+	TripMine = { Name = "Trip Mine", PlaceRange = 10, TriggerRadius = 5, SlowScale = 0.6, SlowSeconds = 2, AlarmRange = 120 },
+	NanoRegen = { Name = "Nano-Regen Station", HealPerSecond = 8, Radius = 8, Duration = 30, Cooldown = 60 },
+	SensorDart = { Name = "Sensor Dart", Range = 80, TriggerRadius = 8, RevealSeconds = 3 },
+	AssaultSlow = { Scale = 0.9, Seconds = 1 }, -- Assault passive: hits slow the shell
+	WeldSeconds = 3, -- Technician passive
+	WeldBreakSeconds = 4, -- seconds of claw attacks to break a weld
+}
+
+-- The Chimera's five default modules. Chassis, Attack and Traversal shape every shell; Utility and
+-- Sabotage also work from a camera.
+Config.Modules = {
+	PhaseWeave = { Name = "Phase Weave", HP = 1000 },
+	EnergyClaws = { Name = "Energy Claws", Range = 6, Damage = 35, Interval = 0.8, HalfArc = 60 },
+	SystemLeap = { Name = "System Leap", Range = 80, Channel = 2, Cooldown = 25, TrailSeconds = 4, TrailRange = 80 },
+	StaticDecoy = { Name = "Static Decoy", Duration = 10, Cooldown = 30, FlickerRange = 6, WalkSpeed = 14 },
+	Overload = { Name = "Overload", MaxTraps = 2, TriggerRadius = 5, SteamDps = 10, SteamSeconds = 4, SteamRadius = 7, BlindSeconds = 2, ConduitDamage = 30, ConduitSlowScale = 0.6, ConduitSlowSeconds = 2 },
+}
+
+Config.Combat = {
+	ShellHitboxWidth = 2.6,
+	ShellHitboxHeight = 5.4,
+	DormantHP = 300,
+	DestroyedTakeBlock = 20, -- seconds before the Chimera can take another shell
+	CameraBrokenSeconds = 45,
+	ForcedHopSeconds = 2, -- static when the Chimera's camera is shot out
+	LagCompensationMax = 0.35, -- seconds a shot may rewind the shell
+	MaxOriginError = 6, -- how far a shot's origin may be from the shooter's head
+	ShotBroadcastRange = 250,
 }
 
 return Config

@@ -45,7 +45,8 @@ local function update(dt: number)
 		sprintRemote:FireServer(want)
 	end
 	local moving = humanoid.MoveDirection.Magnitude > 0.1
-	if want and moving and not exhausted and stamina > 0 then
+	local downed = character:GetAttribute("Downed") == true
+	if want and moving and not downed and not exhausted and stamina > 0 then
 		sprinting = true
 		lastSprintAt = now
 		stamina = math.max(0, stamina - dt)
@@ -62,7 +63,15 @@ local function update(dt: number)
 			exhausted = false
 		end
 	end
+	-- Same rule as the server's MercMovement.speedFor: crawl at 30% when downed, and any slow on top.
 	local speed = if sprinting then M.SprintSpeed else M.WalkSpeed
+	if downed then
+		speed = M.WalkSpeed * Config.Health.DownedSpeedScale
+	end
+	local slowUntil = character:GetAttribute("SlowUntil")
+	if type(slowUntil) == "number" and workspace:GetServerTimeNow() < slowUntil then
+		speed *= character:GetAttribute("SlowScale") or 1
+	end
 	if humanoid.WalkSpeed ~= speed then
 		humanoid.WalkSpeed = speed
 	end
@@ -116,7 +125,6 @@ function MercClient.start()
 		Position = UDim2.fromOffset(0, -18),
 		Size = UDim2.new(1, 0, 0, 16),
 	})
-	ui.hints = Hud.hints({ "WASD  move", "Shift  sprint (5 s)" })
 
 	local camera = workspace.CurrentCamera
 	camera.CameraType = Enum.CameraType.Custom

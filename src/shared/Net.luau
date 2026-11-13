@@ -16,6 +16,9 @@ local DEFINITIONS = {
 	Cue = "RemoteEvent", -- server -> clients in earshot of a tell
 	MercSprint = "RemoteEvent", -- merc client -> server
 	MercState = "RemoteEvent", -- server -> merc client: stamina
+	MercAction = "RemoteEvent", -- merc client -> server: fire, reload, gear, flashlight, stim, aim, spectate
+	MercEvents = "RemoteEvent", -- server -> one merc: tracker, heartbeat, hit markers, blinding, trails
+	Combat = "RemoteEvent", -- server -> clients: shots, explosions and other public effects
 	Debug = "RemoteEvent", -- Studio only
 }
 

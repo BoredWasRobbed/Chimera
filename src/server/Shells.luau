@@ -28,6 +28,26 @@ export type Shell = {
 	lastInputAt: number,
 	debt: number,
 	dockId: string?,
+	-- Combat state, driven by ShellCombat.
+	hp: number,
+	maxHp: number,
+	dead: boolean,
+	revealedUntil: number,
+	staggerUntil: number,
+	slowScale: number,
+	slowUntil: number,
+	speedScale: number,
+	exposed: boolean,
+	forcedVisibility: Visibility?,
+	attackReadyAt: number,
+	leapReadyAt: number,
+	assimilating: any?,
+	leap: any?,
+	anim: { kind: string, startedAt: number, seconds: number }?,
+	epoch: number, -- bumps on teleports, so viewers don't slide the body across the map
+	history: { { t: number, pos: Vector3 } },
+	statusKey: string,
+	statusSentAt: number,
 }
 
 local Shells = {}
@@ -90,6 +110,25 @@ function Shells.spawn(owner: any, player: Player?, feet: CFrame, dockId: string?
 		lastInputAt = os.clock(),
 		debt = 0,
 		dockId = dockId,
+		hp = Config.Modules.PhaseWeave.HP,
+		maxHp = Config.Modules.PhaseWeave.HP,
+		dead = false,
+		revealedUntil = 0,
+		staggerUntil = 0,
+		slowScale = 1,
+		slowUntil = 0,
+		speedScale = 1,
+		exposed = false,
+		forcedVisibility = nil,
+		attackReadyAt = 0,
+		leapReadyAt = 0,
+		assimilating = nil,
+		leap = nil,
+		anim = nil,
+		epoch = 0,
+		history = { { t = workspace:GetServerTimeNow(), pos = feet.Position } },
+		statusKey = "",
+		statusSentAt = 0,
 	}
 	shells[shell.id] = shell
 	if player then
@@ -98,7 +137,8 @@ function Shells.spawn(owner: any, player: Player?, feet: CFrame, dockId: string?
 	return shell
 end
 
--- reason: "collapse" (it left or ran dry: perceiving mercs see it fall apart) or "gone".
+-- reason: "collapse" (it left or ran dry: perceiving mercs see it fall apart), "destroyed" (shot to
+-- pieces) or "gone".
 function Shells.remove(shell: Shell, reason: string)
 	if shells[shell.id] ~= shell then
 		return
@@ -185,12 +225,21 @@ local function nextInput(shell: Shell): ShellMotor.Input
 	return { mx = last.mx, mz = last.mz, jump = false, yaw = last.yaw }
 end
 
+local HISTORY_SECONDS = 0.6
+
 function Shells.tick(dt: number)
 	local params = ShellMotor.params()
+	local now = workspace:GetServerTimeNow()
 	for _, shell in shells do
 		local input = if shell.brain then shell.brain(shell, dt) else nextInput(shell)
+		input.speedScale = shell.speedScale
 		shell.state = ShellMotor.step(shell.state, input, dt, params)
 		shell.yaw = input.yaw
+		local history = shell.history
+		table.insert(history, { t = now, pos = shell.state.pos })
+		while #history > 2 and now - history[1].t > HISTORY_SECONDS do
+			table.remove(history, 1)
+		end
 		if shell.state.pos.Y < S.KillY then
 			for _, listener in fellListeners do
 				listener(shell)
@@ -199,8 +248,43 @@ function Shells.tick(dt: number)
 	end
 	for player, shell in byPlayer do
 		local s = shell.state
-		authRemote:FireClient(player, shell.nonce, shell.lastSeq, s.pos.X, s.pos.Y, s.pos.Z, s.vel.X, s.vel.Y, s.vel.Z, s.grounded)
+		authRemote:FireClient(player, shell.nonce, shell.lastSeq, s.pos.X, s.pos.Y, s.pos.Z, s.vel.X, s.vel.Y, s.vel.Z, s.grounded, shell.speedScale)
 	end
+end
+
+-- Where the shell's feet were at server time `t` (for lag-compensated hits), from recent history.
+function Shells.positionAt(shell: Shell, t: number): Vector3
+	local history = shell.history
+	if #history == 0 or t >= history[#history].t then
+		return shell.state.pos
+	end
+	if t <= history[1].t then
+		return history[1].pos
+	end
+	for i = #history - 1, 1, -1 do
+		local a, b = history[i], history[i + 1]
+		if a.t <= t then
+			local span = b.t - a.t
+			local alpha = if span > 1e-4 then (t - a.t) / span else 1
+			return a.pos:Lerp(b.pos, alpha)
+		end
+	end
+	return shell.state.pos
+end
+
+-- Moves a shell instantly (System Leap). Viewers see it vanish and reappear rather than slide.
+function Shells.teleport(shell: Shell, feet: CFrame)
+	local look = feet.LookVector
+	shell.state = { pos = feet.Position, vel = Vector3.zero, grounded = false }
+	shell.yaw = math.atan2(-look.X, -look.Z)
+	shell.lastInput = { mx = 0, mz = 0, jump = false, yaw = shell.yaw }
+	shell.epoch += 1
+	shell.history = { { t = workspace:GetServerTimeNow(), pos = feet.Position } }
+end
+
+-- Merc bodies shells can't walk through.
+function Shells.setObstacles(characters: { Instance })
+	ShellMotor.setObstacles(characters)
 end
 
 function Shells.init()
