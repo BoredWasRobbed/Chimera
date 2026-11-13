@@ -5,7 +5,9 @@
 --   Geometry               floors, walls, ceilings
 --   Props                  racks, cubicles, pipes, crates
 --   Doors/<DoorId>         Model: DoorId, RoomA, RoomB, TargetKind="LockDoor", TargetId
---     Panel                the sliding door; CFrame attributes ClosedCFrame and OpenCFrame
+--     Panel                the sliding door; CFrame attributes ClosedCFrame and OpenCFrame. A map-kit door
+--                          has neither: it's placed closed and opens by sliding its model's Slide attribute
+--                          (studs along the panel's X); the server then writes both attributes
 --     LockLight*           lights that show the lock
 --   Docks/<DockId>         Model: DockId, Room, DisplayName, TargetKind="TakeShell", TargetId
 --     Spawn                invisible marker; its CFrame is the shell's feet and facing
@@ -26,6 +28,9 @@
 --   Core/Platform          invisible box over the Core platform the finales are held on
 --   Floodlights/*          parts with a light, off until the Purge finale floodlights the Core
 --   EmergencyLights/<RoomId>  parts with a light, off until a terminal in the room's wing is rebooted
+--                          (or map-kit models whose glowing part is named Lamp)
+local RunService = game:GetService("RunService")
+
 local Config = require(script.Parent.Config)
 local CameraMath = require(script.Parent.CameraMath)
 
@@ -154,12 +159,23 @@ function FacilityMap.doors(): { [string]: DoorInfo }
 					table.insert(lights, child)
 				end
 			end
+			local closed = panel:GetAttribute("ClosedCFrame")
+			local open = panel:GetAttribute("OpenCFrame")
+			if typeof(closed) ~= "CFrame" then
+				-- A map-kit door: placed closed, it slides along its panel's X to open.
+				closed = panel.CFrame
+				open = (closed :: CFrame) * CFrame.new(model:GetAttribute("Slide") or panel.Size.X, 0, 0)
+				if RunService:IsServer() then
+					panel:SetAttribute("ClosedCFrame", closed)
+					panel:SetAttribute("OpenCFrame", open)
+				end
+			end
 			out[id] = {
 				id = id,
 				model = model,
 				panel = panel,
-				closed = panel:GetAttribute("ClosedCFrame") or panel.CFrame,
-				open = panel:GetAttribute("OpenCFrame") or panel.CFrame,
+				closed = closed,
+				open = if typeof(open) == "CFrame" then open else closed,
 				lockLights = lights,
 				rooms = { model:GetAttribute("RoomA") or "", model:GetAttribute("RoomB") or "" },
 			}
@@ -301,6 +317,13 @@ function FacilityMap.emergencyLights(): { [string]: { BasePart } }
 		for _, part in roomFolder:GetChildren() do
 			if part:IsA("BasePart") then
 				table.insert(parts, part)
+			elseif part:IsA("Model") then
+				-- A map-kit beacon: only its part named Lamp lights up.
+				for _, d in part:GetDescendants() do
+					if d:IsA("BasePart") and d.Name == "Lamp" then
+						table.insert(parts, d)
+					end
+				end
 			end
 		end
 		out[roomFolder.Name] = parts

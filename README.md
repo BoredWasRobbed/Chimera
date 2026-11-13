@@ -120,26 +120,33 @@ The map is built in Studio, and the code finds everything by folder and attribut
 
 ### The map kit
 
-`ServerStorage.MapKit` holds 65 dark-metal pieces for dressing the facility, built by `tools/mapkit/BuildMapKit.luau` (it syncs to `ServerStorage.DevTools.BuildMapKit`). Nothing is placed in the world: drag pieces out of the Explorer.
+`ServerStorage.MapKit` holds 79 dark-metal pieces for dressing the facility, built by `tools/mapkit/BuildMapKit.luau` (it syncs to `ServerStorage.DevTools.BuildMapKit`). Nothing is placed in the world: drag pieces out of the Explorer.
 
 | Folder | Pieces |
 | --- | --- |
-| Walls | 8x16 and 8x12 wall panels (plate, ribbed, vent, pipes, screen, hazard), 4-wide fillers, 8x8 upper panels to stack for taller rooms, a cap, 16 and 12 pillars |
-| Floors | diamond plate and grate tiles (8x8), a hazard stripe (8x1) |
-| Ceilings | ceiling panel (8x8), I-beam, duct, cable tray |
+| Walls | 8x16 and 8x12 wall panels (plate, ribbed, vent, pipes, live screen, hazard, access hatch), 4-wide fillers, upper panels to stack for taller rooms (8x8) and over doors (8x4), a cap, 16 and 12 pillars |
+| Floors | diamond plate and grate tiles (8x8), a hazard strip (8x1), a floor hatch (4x4) |
+| Ceilings | ceiling panel (8x8), I-beam, duct, cable tray, hanging pipes |
 | Doorways | frames for the graybox openings: 8x10, 12x10, 24x12, 24x14 |
 | Lights | ceiling strip, caged wall lamp, pendant |
-| Office | desk, a dressed workstation, monitors (log, camera feed, graph, alert, off), keyboard, mouse, laptop, mug, paper tray, PC tower, chair, control console, wall monitors, filing cabinet, locker, storage shelf |
-| ServerRoom | two server racks, a cooling unit, a floor cable bundle |
-| Industrial | pipe runs (horizontal and vertical), junction box, crate, crate stack, barrel, railing |
-| Signs | sector, direction, warning and restricted signs (edit the TextLabel) |
+| Office | desk, a dressed workstation, monitors (one per feed), keyboard, mouse, laptop, mug, paper tray, PC tower, chair, control console, wall monitors (map, camera, status), filing cabinet, locker, storage shelf |
+| ServerRoom | two server racks, a cooling unit, a cable bundle under a floor protector |
+| Industrial | pipe runs (horizontal with a valve and gauge, and vertical), junction box, crate, crate stack, barrel, railing |
+| Signs | sector (names its room), direction, warning, restricted, and a Lockdown sign that lights up |
+| Gameplay | contract-ready Mainframe Terminal, security camera, sliding door (for `DoorFrame_8x10`) and emergency beacon |
 
 How the pieces fit:
 - Everything sits on a 4-stud grid and most pieces are 8 wide, matching the graybox walls and openings.
-- A piece's pivot is where it mounts and its front faces -Z (the `Mount` attribute): wall pieces pivot at the bottom of their back on the wall's face, floor pieces at the bottom centre, desk pieces on a desk top (desks are 2.8 high), ceiling pieces at the top centre, and doorway frames at the bottom of the opening on the wall's centre line.
+- A piece's pivot is where it mounts and its front faces -Z (the `Mount` attribute): wall pieces pivot at the bottom of their back on the wall's face, floor pieces at the bottom centre, desk pieces on a desk top (desks are 2.8 high), ceiling pieces at the top centre, and doorway frames at the bottom of the opening on the wall's centre line. On a wall lined with panels, mount props on the panel sheets, 0.52 in front of the wall's face.
 - The `PlaceIn` attribute says which folder of the map contract a piece goes in. Lights go in `Facility/Lights/<RoomId>`; their glowing part is named `Fixture`, so Blackout turns them off and mercs can shoot them out.
+- The Gameplay pieces carry the contract's attributes with placeholder ids (`TERM_NEW`, `CAM_NEW`, `D_NEW`): set them when you place one. The door is placed closed in the doorway and slides its `Slide` attribute's studs along its X to open; `FacilityMap` works out its open and closed positions. The beacon's red `Lamp` lights when the wing's terminal is rebooted.
 - Only the big parts collide, so nothing snags a merc or a shell sliding along a wall. Everything still blocks sight and shots.
-- Screens are SurfaceGuis that ignore lighting, so they stay lit in a Blackout. Rack LEDs and status lights do too, but they cast no light.
+- Signs and screen headings use Zekton; data lines use Roboto Mono.
 - `Model:ScaleTo` resizes a piece cleanly.
 
-Running `require(game.ServerStorage.DevTools.BuildMapKit:Clone())()` rebuilds the kit and replaces `ServerStorage.MapKit`. `require(game.ServerStorage.DevTools.BuildMapKit:Clone()).gallery()` lays every piece out in `Workspace.MapKitGallery`, far from the map (around z 500 to 700), one row per folder with a nameplate under each piece; delete it before saving the place. If a gallery shot from the MCP looks unlit, move the Studio camera there first and wait a few seconds for the lighting to catch up.
+Live pieces. `src/client/FacilityScreens.luau` drives them on every client from facts the client already has (the match state, terminal, camera and door attributes, which lights are on, merc vitals), so they send nothing and show nothing a player couldn't already see. The pieces are found by CollectionService tag, wherever they're placed:
+- Screens (`KitScreen`) each show one feed from `src/shared/ScreenFeeds.luau`, set by the screen's `Feed` attribute: Status, Upload, Terminals, Camera (set `CameraId`, or leave it empty for the room's own camera), Room, Squad, Log, Map (drawn from the real room layout, with a you-are-here dot), Graph, Alert, Terminal or Off. Change `Feed` on a placed screen to change what it shows. The Log feed lists facility events as they happen (doors sealed, power failures, terminal faults and reboots, cameras shot out, downs). Screens in a blacked-out room dim, and the Upload finale makes them glitch.
+- Rack LEDs and console buttons (`KitLeds`) blink faster as the upload climbs and turn amber in Lockdown and magenta in the Upload finale. Status lights (`KitStatus`) go amber in a dark room, green in a secured wing and red in Lockdown or a finale. Door lights (`KitDoorLight`) on doorframes show the nearest door: green open, amber sealed, white welded. Sector signs show their room, doorframe headers show the room through the door, and the Lockdown sign lights up for Lockdown and the finales.
+- Screens animate within 60 studs of the camera and refresh slowly out to 160; LEDs animate within 70.
+
+Running `require(game.ServerStorage.DevTools.BuildMapKit:Clone())()` rebuilds the kit and replaces `ServerStorage.MapKit`. `require(game.ServerStorage.DevTools.BuildMapKit:Clone()).gallery()` lays every piece out in `Workspace.MapKitGallery`, far from the map (around z 490 to 700), one row per folder with a nameplate under each piece; delete it before saving the place. `require(game.ServerStorage.DevTools.BuildMapKit:Clone()).audit()` checks every piece, and a sample hallway built from them, for Z-fighting: faces that point the same way, lie in the same plane and overlap. It reports the ones you could see and counts the ones buried inside other parts. If a gallery shot from the MCP looks unlit, move the Studio camera there first and wait a few seconds for the lighting to catch up.

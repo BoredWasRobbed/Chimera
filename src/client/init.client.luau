@@ -12,6 +12,7 @@ local DebugPanel = require(script.DebugPanel)
 local DetectionHud = require(script.DetectionHud)
 local DockViews = require(script.DockViews)
 local Effects = require(script.Effects)
+local FacilityScreens = require(script.FacilityScreens)
 local FacilityView = require(script.FacilityView)
 local Flashlights = require(script.Flashlights)
 local Hud = require(script.Hud)
@@ -55,6 +56,13 @@ MercCombat.init(clientFolder)
 PingClient.init()
 Spectate.init()
 ChimeraClient.init(clientFolder)
+-- The map kit's live screens and lights: decoration only, so a fault there never stops the client.
+task.spawn(function()
+	local ok, err = pcall(FacilityScreens.init)
+	if not ok then
+		warn(`[Chimera] facility screens failed to start: {err}`)
+	end
+end)
 
 local function stopMercBody()
 	PingClient.stopWheel()
@@ -119,6 +127,7 @@ if RunService:IsStudio() then
 			shellsSeen = ShellViews.describe(),
 			docksKnown = DockViews.all(),
 			cuesHeard = CuePlayer.recent(5),
+			screens = FacilityScreens.describe(),
 		}
 	end, {
 		key = function(keyName: string, down: boolean)
