@@ -13,5 +13,5 @@
 - The map, lighting and world content live in the Roblox place, not in git. Save the place after building in Studio.
 
 ## Git workflow
-- When a piece of work is done and verified, **commit and push it to `master`** as well as to the
-  working branch. Fast-forward only; never rewrite `master` history.
+- When a piece of work is done and verified, **commit and push it to `main`** as well as to the
+  working branch. Fast-forward only; never rewrite `main` history.
