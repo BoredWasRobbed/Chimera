@@ -104,7 +104,8 @@ local function seesDock(eye: Vector3, eyeLead: Vector3, dock): boolean
 	return Sight.anyClear(eye, points, dock.model) or Sight.anyClear(eyeLead, points, dock.model)
 end
 
--- { kind, id, time, x, y, z, yaw, speed, visibility, epoch, action, actionProgress, tagged }
+-- { kind, id, time, x, y, z, yaw, speed, visibility, epoch, action, actionProgress, tagged, bornAt }
+-- bornAt (when it was taken) lets a merc who sees a fresh shell watch its panels lock into place.
 local function pack(kind: string, shell: Shells.Shell, serverTime: number): { any }
 	local p = shell.state.pos
 	local v = shell.state.vel
@@ -114,7 +115,7 @@ local function pack(kind: string, shell: Shells.Shell, serverTime: number): { an
 		progress = math.clamp((os.clock() - shell.anim.startedAt) / shell.anim.seconds, 0, 1)
 	end
 	local tagged = shell.taggedUntil > os.clock()
-	return { kind, shell.id, serverTime, p.X, p.Y, p.Z, shell.yaw, math.sqrt(v.X * v.X + v.Z * v.Z), shell.visibility, shell.epoch, action, progress, tagged }
+	return { kind, shell.id, serverTime, p.X, p.Y, p.Z, shell.yaw, math.sqrt(v.X * v.X + v.Z * v.Z), shell.visibility, shell.epoch, action, progress, tagged, shell.bornAt }
 end
 
 -- Can this security camera see the shell right now? (Overwatch Tag.)

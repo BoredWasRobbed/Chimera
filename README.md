@@ -84,6 +84,23 @@ Calls made where the design doc gives no number or rule, all in `Config.luau` or
 - If everyone picks Merc only, someone is picked anyway. Players beyond six watch the round.
 - A Chimera who leaves during Loadout is replaced from the mercs; from Deployment on, leaving is a merc win.
 
+### The shell body
+
+A shell's body (`src/shared/ShellRig.luau`) is built from six body modules, one per R6 block: the head, the torso, two arms and two legs. Each module is a dark inner frame wrapped in hinged armour panels (41 panels in all). The three-segment tail rounds it out.
+
+- **In its dock** a dormant shell stands unformed: its panels hang open, its head is bowed and its arms sag off the shoulders.
+- **Booting** (the Chimera holding E on the dock): the frame glows red, the eyes light and the panels twitch part-way shut. If the take is cancelled, they fall open again.
+- **Taken**: the modules lock into place in turn: legs, torso, arms, then head. Each flashes red along its seams as it locks. The visor slams shut last, the eyes ignite and the module parts slide out, 1.25 s in all. Then the body fades into its look over 0.35 s.
+- **Formed**: the seams glow dull red on a Revealed body and on the Chimera's own view. Cloaked and Exposed bodies draw only the six R6 blocks and the tail in Phase Weave's shimmer, exactly as before, so the panels never make a cloaked shell easier to see.
+- **Collapse**: when the Chimera leaves or runs dry, the cloak drops and the bare panels fall apart. A destroyed shell still bursts apart.
+
+The server stamps each shell with the time it was taken (`bornAt`), and clients time the lock-in from it. A merc who first sees a shell mid-take sees the rest of it; a shell that's already up shows formed. The panels, their hinges and the timeline are tables at the top of ShellRig.
+
+Calls made where the request left it open, all easy to change in ShellRig:
+- The lock-in doesn't slow the Chimera: it can move as soon as it takes the shell (the legs lock first).
+- A merc who perceives a fresh shell sees the bare body form for 1.25 s before the cloak engages. The dormant shell stood in plain view a moment before, so this gives away little.
+- A shell that collapses because the Chimera left drops its cloak, so mercs who perceive it see bare panels fall (before, the shimmer fell).
+
 ### Testing in Studio
 
 - To see both sides at once, use the Test tab: Clients and Servers, 2 players, Start. Chimera Chance picks the Chimera; click Merc only on one client in the lobby to decide who it is.

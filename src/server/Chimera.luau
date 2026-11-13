@@ -192,7 +192,7 @@ local function enterShell(agent: Agent, dockId: string, force: boolean?)
 	agent.shell = shell
 	agent.mode = "shell"
 	local p = shell.state.pos
-	send(agent, { type = "shellTaken", shellId = shell.id, nonce = shell.nonce, x = p.X, y = p.Y, z = p.Z, yaw = shell.yaw })
+	send(agent, { type = "shellTaken", shellId = shell.id, nonce = shell.nonce, x = p.X, y = p.Y, z = p.Z, yaw = shell.yaw, bornAt = shell.bornAt })
 	syncEnergy(agent)
 	ShellCombat.statusOf(shell)
 	return true
@@ -456,7 +456,7 @@ local function snapshot(agent: Agent)
 	}
 	if shell then
 		local p = shell.state.pos
-		message.shell = { shellId = shell.id, nonce = shell.nonce, x = p.X, y = p.Y, z = p.Z, yaw = shell.yaw }
+		message.shell = { shellId = shell.id, nonce = shell.nonce, x = p.X, y = p.Y, z = p.Z, yaw = shell.yaw, bornAt = shell.bornAt }
 	end
 	send(agent, message)
 	sendModules(agent)

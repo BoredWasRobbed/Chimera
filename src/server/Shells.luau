@@ -29,6 +29,7 @@ export type Shell = {
 	lastInputAt: number,
 	debt: number,
 	dockId: string?,
+	bornAt: number, -- server time it was taken: clients time the panels locking into place from it
 	-- Combat state, driven by ShellCombat.
 	hp: number,
 	maxHp: number,
@@ -114,6 +115,7 @@ function Shells.spawn(owner: any, player: Player?, feet: CFrame, dockId: string?
 		lastInputAt = os.clock(),
 		debt = 0,
 		dockId = dockId,
+		bornAt = workspace:GetServerTimeNow(),
 		hp = hp,
 		maxHp = hp,
 		dead = false,

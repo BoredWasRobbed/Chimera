@@ -42,6 +42,7 @@ type Active = {
 	speedScale: number,
 	action: { kind: string, startedAt: number, seconds: number }?,
 	bodyHidden: boolean,
+	bornAt: number?, -- server time the shell was taken: its panels lock into place from then (ShellRig)
 }
 
 local ShellControl = {}
@@ -201,6 +202,7 @@ local function render(dt: number)
 			action = { kind = a.action.kind, progress = progress }
 		end
 	end
+	ShellRig.setAssembly(a.rig, if a.bornAt then workspace:GetServerTimeNow() - a.bornAt else nil)
 	ShellRig.pose(a.rig, CFrame.new(feet) * CFrame.Angles(0, a.yaw, 0), a.phase, math.clamp(speed / Config.Shell.WalkSpeed, 0, 1), now, action)
 
 	local camera = workspace.CurrentCamera
@@ -302,6 +304,7 @@ end
 function ShellControl.start(info: { [string]: any })
 	ShellControl.stop()
 	local feet = Vector3.new(info.x, info.y, info.z)
+	-- The body starts unformed and locks itself together over the first moments (see render).
 	local rig = ShellRig.build("OwnShell", true)
 	ShellRig.setLook(rig, "owner")
 	rig.Parent = folder
@@ -325,6 +328,7 @@ function ShellControl.start(info: { [string]: any })
 		speedScale = 1,
 		action = nil,
 		bodyHidden = false,
+		bornAt = tonumber(info.bornAt),
 	}
 	refreshObstacles()
 	local gui = Hud.gui()
@@ -423,6 +427,7 @@ function ShellControl.describe(): { [string]: any }?
 		target = target and { kind = target.kind, id = target.id },
 		leap = leapCandidate and leapCandidate.id,
 		assimilate = assimilateCandidate and assimilateCandidate.Name,
+		body = ShellRig.describe(a.rig),
 	}
 end
 

@@ -2,7 +2,9 @@
 -- this merc can perceive it ("show"/"update"), then "hide" or "collapse". Between updates the body is
 -- interpolated slightly in the past, so movement stays smooth at the server's send rate. A new epoch
 -- means the shell teleported (System Leap): the body jumps instead of sliding across the map.
--- Perceived bodies are solid for this client, so mercs bump into them.
+-- Perceived bodies are solid for this client, so mercs bump into them. A shell taken moments ago is
+-- still locking its panels into place (ShellRig), timed from when it was taken, so a merc who sees it
+-- late sees the rest of it.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -23,6 +25,7 @@ type View = {
 	lastLook: string,
 	lastAmount: number,
 	tagged: boolean, -- an Overwatch Tag: outlined (orange) whatever its visibility
+	bornAt: number?, -- server time the Chimera took it
 }
 
 local ShellViews = {}
@@ -74,8 +77,10 @@ local function collapse(id: string, pos: Vector3, yaw: number, destroyed: boolea
 		view.highlight:Destroy()
 	end
 	ShellRig.setSolid(model, false)
+	-- The cloak drops with the Chimera gone, and the bare body falls apart into its panels.
+	ShellRig.setAssembly(model, nil)
+	ShellRig.setLook(model, if destroyed then "revealed" else "dormant")
 	if destroyed then
-		ShellRig.setLook(model, "revealed")
 		onDestroyed(pos + Vector3.new(0, 3, 0))
 	end
 	-- Falls apart: every part drops to the floor, tumbling, and fades.
@@ -144,9 +149,10 @@ local function push(message: { any })
 		local model = ShellRig.build(`Shell_{id}`, true)
 		ShellRig.setSolid(model, true)
 		model.Parent = folder
-		view = { model = model, snapshots = {}, visibility = "Cloaked", epoch = 0, action = nil, phase = 0, highlight = nil, lastLook = "", lastAmount = -1, tagged = false }
+		view = { model = model, snapshots = {}, visibility = "Cloaked", epoch = 0, action = nil, phase = 0, highlight = nil, lastLook = "", lastAmount = -1, tagged = false, bornAt = nil }
 		views[id] = view
 	end
+	view.bornAt = tonumber(message[14])
 	view.visibility = if type(message[9]) == "string" then message[9] else "Cloaked"
 	local epoch = tonumber(message[10]) or 0
 	if epoch ~= view.epoch then
@@ -170,6 +176,7 @@ local function render(dt: number)
 		end
 		local pos, yaw, speed = sample(view.snapshots, renderTime)
 		view.phase += dt * speed * 0.55
+		ShellRig.setAssembly(view.model, if view.bornAt then renderTime - view.bornAt else nil)
 		ShellRig.pose(view.model, CFrame.new(pos) * CFrame.Angles(0, yaw, 0), view.phase, math.clamp(speed / Config.Shell.WalkSpeed, 0, 1), now, view.action)
 		setLook(view, speed)
 	end
@@ -203,6 +210,7 @@ function ShellViews.describe(): { [string]: any }
 			visibility = view.visibility,
 			epoch = view.epoch,
 			action = view.action and view.action.kind,
+			body = ShellRig.describe(view.model),
 			pos = last and { math.floor(last.pos.X * 10) / 10, math.floor(last.pos.Y * 10) / 10, math.floor(last.pos.Z * 10) / 10 },
 		}
 	end
