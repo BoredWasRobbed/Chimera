@@ -17,10 +17,11 @@ function DebugPanel.init(describe: () -> { [string]: any }, commands: { [string]
 	local gui = Hud.gui()
 	local overlayOn = false
 
+	-- Bottom-right, out of the way of the camera markers that clamp to the top and side edges.
 	local panel = Hud.frame(gui, {
 		Name = "DevPanel",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -16, 0, 120),
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -16, 1, -16),
 		Size = UDim2.fromOffset(200, 176),
 		BackgroundTransparency = 0.4,
 		ZIndex = 40,
@@ -35,11 +36,11 @@ function DebugPanel.init(describe: () -> { [string]: any }, commands: { [string]
 	})
 	local overlay = Hud.text(gui, {
 		Name = "PerceptionOverlay",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -16, 0, 304),
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -16, 1, -200),
 		Size = UDim2.fromOffset(320, 120),
 		TextSize = 14,
-		TextYAlignment = Enum.TextYAlignment.Top,
+		TextYAlignment = Enum.TextYAlignment.Bottom,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Visible = false,
 		ZIndex = 40,

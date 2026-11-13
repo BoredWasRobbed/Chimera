@@ -46,7 +46,7 @@ local markers: { { button: TextButton, camera: FacilityMap.CameraInfo, label: st
 local hiddenParts: { BasePart } = {}
 local connections: { RBXScriptConnection } = {}
 local ui: { [string]: any } = {}
-local testPointer: Vector2? = nil -- Studio tests aim here instead of at the mouse
+local testAim: Vector3? = nil -- Studio tests aim at this world point instead of the mouse
 
 local function camNumber(id: string): string
 	local order = {}
@@ -91,8 +91,12 @@ end
 local function placeMarkers()
 	local camera = workspace.CurrentCamera
 	local viewport = camera.ViewportSize
-	local center = viewport / 2
-	local margin = Vector2.new(110, 60)
+	-- Keep markers inside this box, clear of the camera label, clock and the bottom bars.
+	local minX, maxX = 120, viewport.X - 120
+	local minY, maxY = 110, viewport.Y - 130
+	local center = Vector2.new((minX + maxX) / 2, (minY + maxY) / 2)
+	local half = Vector2.new((maxX - minX) / 2, (maxY - minY) / 2)
+	local placed: { Vector2 } = {}
 	for _, marker in markers do
 		local world = marker.camera.lens.Position + Vector3.new(0, 1.2, 0)
 		local projected = camera:WorldToViewportPoint(world)
@@ -101,11 +105,7 @@ local function placeMarkers()
 		if behind then
 			point = viewport - point
 		end
-		local inside = not behind
-			and point.X >= margin.X
-			and point.X <= viewport.X - margin.X
-			and point.Y >= margin.Y
-			and point.Y <= viewport.Y - margin.Y
+		local inside = not behind and point.X >= minX and point.X <= maxX and point.Y >= minY and point.Y <= maxY
 		if inside then
 			marker.button.Text = `◉ {marker.label}`
 		else
@@ -113,13 +113,26 @@ local function placeMarkers()
 			if d.Magnitude < 1 then
 				d = Vector2.new(0, 1)
 			end
-			local scale = math.min(
-				(center.X - margin.X) / math.max(math.abs(d.X), 1e-3),
-				(center.Y - margin.Y) / math.max(math.abs(d.Y), 1e-3)
-			)
+			local scale = math.min(half.X / math.max(math.abs(d.X), 1e-3), half.Y / math.max(math.abs(d.Y), 1e-3))
 			point = center + d * scale
 			marker.button.Text = if d.X < 0 then `◀ {marker.label}` else `{marker.label} ▶`
 		end
+		-- Stack markers that would cover each other, moving toward the middle of the screen.
+		local step = if point.Y > center.Y then -30 else 30
+		for _ = 1, #markers do
+			local overlapping = false
+			for _, other in placed do
+				if math.abs(point.X - other.X) < 204 and math.abs(point.Y - other.Y) < 30 then
+					overlapping = true
+					break
+				end
+			end
+			if not overlapping then
+				break
+			end
+			point = Vector2.new(point.X, point.Y + step)
+		end
+		table.insert(placed, point)
 		marker.button.Position = UDim2.fromOffset(point.X, point.Y)
 	end
 end
@@ -248,9 +261,13 @@ local function updateHover()
 		TargetHighlight.set(nil)
 		return
 	end
-	local mouse = testPointer or UserInputService:GetMouseLocation()
+	local mouse = UserInputService:GetMouseLocation()
+	if testAim then
+		local projected = workspace.CurrentCamera:WorldToViewportPoint(testAim)
+		mouse = Vector2.new(projected.X, projected.Y)
+	end
 	local inset = GuiService:GetGuiInset()
-	if not testPointer then
+	if not testAim then
 		for _, object in player.PlayerGui:GetGuiObjectsAtPosition(mouse.X - inset.X, mouse.Y - inset.Y) do
 			if object:IsA("GuiButton") and object.Visible then
 				TargetHighlight.set(nil)
@@ -468,21 +485,17 @@ function FacilityView.describe(): { [string]: any }
 	}
 end
 
--- For tests: turn this camera to face a world point (within its limits) and aim at the screen centre.
+-- For tests: turn this camera toward a world point (as far as its limits allow) and aim the cursor at
+-- it, as a player would with the mouse. Pass nil to hand the cursor back.
 function FacilityView.lookAt(point: Vector3?)
+	testAim = point
 	local info = current
-	if not point then
-		testPointer = nil
-		return
-	end
-	if not info then
+	if not point or not info then
 		return
 	end
 	local yaw, pitch = CameraMath.anglesFromLook((point - info.origin).Unit)
 	yawOffset = CameraMath.wrap(yaw - info.baseYaw)
 	pitchOffset = pitch - info.basePitch
-	local viewport = workspace.CurrentCamera.ViewportSize
-	testPointer = Vector2.new(viewport.X / 2, viewport.Y / 2)
 end
 
 return FacilityView

@@ -1,6 +1,6 @@
 -- Studio-only test tools. Nothing here runs in a live server.
 --   Debug remote (the in-game DEV panel): switch role, spawn a patrolling test shell, cycle its
---   visibility state, show the perception overlay.
+--   visibility state, show the perception overlay, lock a door as if the Chimera had.
 --   ServerScriptService.ChimeraTestHook (BindableFunction): JSON state and commands for automated checks.
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -216,6 +216,9 @@ local function testCommand(command: string, ...): any
 		end
 		Chimera.setEnergy(agent, args[2])
 		return { ok = true }
+	elseif command == "lockDoor" then
+		local ok, err = Doors.lock(args[1])
+		return { ok = ok, error = err }
 	elseif command == "overwatch" then
 		local player = Players:FindFirstChild(args[1])
 		if player then
@@ -242,6 +245,9 @@ function Debug.init()
 		elseif command == "overlay" then
 			Perception.setDebug(player, value == true)
 			message = if value == true then "perception overlay on" else "perception overlay off"
+		elseif command == "lockDoor" and type(value) == "string" then
+			local ok, err = Doors.lock(value)
+			message = if ok then `{value} locked` else `{value}: {err}`
 		end
 		if message then
 			remote:FireClient(player, "message", message)
