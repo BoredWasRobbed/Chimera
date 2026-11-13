@@ -125,4 +125,4 @@ How the pieces fit:
 - Screens are SurfaceGuis that ignore lighting, so they stay lit in a Blackout. Rack LEDs and status lights do too, but they cast no light.
 - `Model:ScaleTo` resizes a piece cleanly.
 
-Running `require(game.ServerStorage.DevTools.BuildMapKit:Clone())()` rebuilds the kit and replaces `ServerStorage.MapKit`. `require(game.ServerStorage.DevTools.BuildMapKit:Clone()).gallery()` lays every piece out in `Workspace.MapKitGallery`, far from the map; delete it before saving the place. If a gallery shot from the MCP looks unlit, move the Studio camera there first and wait a few seconds for the lighting to catch up.
+Running `require(game.ServerStorage.DevTools.BuildMapKit:Clone())()` rebuilds the kit and replaces `ServerStorage.MapKit`. `require(game.ServerStorage.DevTools.BuildMapKit:Clone()).gallery()` lays every piece out in `Workspace.MapKitGallery`, far from the map (around z 500 to 700), one row per folder with a nameplate under each piece; delete it before saving the place. If a gallery shot from the MCP looks unlit, move the Studio camera there first and wait a few seconds for the lighting to catch up.

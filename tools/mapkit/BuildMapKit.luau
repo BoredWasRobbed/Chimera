@@ -1143,9 +1143,23 @@ local function build(): string
 	return `map kit built: {pieces} pieces, {parts} parts in ServerStorage.MapKit`
 end
 
--- Lays a copy of every piece out in rows (one per category) on a lit floor at `origin`, far from the map.
--- Wall pieces get a backdrop wall, ceiling pieces a slab to hang from. Delete Workspace.MapKitGallery
--- before saving the place.
+-- A plate standing on the gallery floor with a piece's name (or a row's category) on its front.
+local function nameplate(g: Builder, text: string, size: Vector3, at: Vector3, color: Color3)
+	local p = g.box("Label", size, at, COL.black, MAT.SmoothPlastic)
+	p.CastShadow = false
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Front
+	gui.LightInfluence = 0
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 40
+	local t = label(gui, text, UDim2.fromScale(0.03, 0.1), UDim2.fromScale(0.94, 0.8), color, Enum.TextXAlignment.Center, Enum.Font.GothamBold)
+	t.TextYAlignment = Enum.TextYAlignment.Center
+	gui.Parent = p
+end
+
+-- Lays a copy of every piece out in rows (one per category, in kit order) on a lit floor at `origin`,
+-- far from the map, each with a nameplate in front. Wall pieces get a backdrop wall, ceiling pieces a
+-- slab to hang from. Delete Workspace.MapKitGallery before saving the place.
 local function gallery(origin: Vector3?): string
 	local kit = ServerStorage:FindFirstChild("MapKit")
 	if not kit then
@@ -1161,13 +1175,22 @@ local function gallery(origin: Vector3?): string
 	root.Name = "MapKitGallery"
 	root.Parent = workspace
 	local g = newBuilder(root, CFrame.new(base))
+	local order = {}
+	for i, entry in KIT do
+		order[entry[2]] = i
+	end
 	local rowZ = 0
 	for _, category in CATEGORY_ORDER do
 		local folder = (kit :: Instance):FindFirstChild(category)
 		if folder then
 			local x = 0
 			local deepest = 0
-			for _, model in folder:GetChildren() do
+			local models = folder:GetChildren()
+			table.sort(models, function(a, b)
+				return (order[a.Name] or math.huge) < (order[b.Name] or math.huge)
+			end)
+			nameplate(g, string.upper(category), Vector3.new(10, 2.4, 0.2), Vector3.new(-7, 7, rowZ - 0.1), COL.cyan)
+			for _, model in models do
 				local copy = (model :: Model):Clone()
 				local cf, size = copy:GetBoundingBox()
 				local offset = copy:GetPivot():ToObjectSpace(cf)
@@ -1181,12 +1204,14 @@ local function gallery(origin: Vector3?): string
 				end
 				copy:PivotTo(CFrame.new(base + Vector3.new(x + width / 2 - offset.X + 0.5, y, z)))
 				copy.Parent = root
+				local front = z + offset.Z - size.Z / 2 - (if mount == "Desk" then 0.5 else 0)
+				nameplate(g, `{copy.Name}\n{mount}`, Vector3.new(math.max(width, 4.5), 1.4, 0.15), Vector3.new(x + width / 2 + 0.5, 0.7, front - 2), COL.text)
 				x += width + 4
 				deepest = math.max(deepest, size.Z)
 			end
-			g.box("Floor", Vector3.new(x + 8, 1, deepest + 14), Vector3.new(x / 2, -0.5, rowZ - 4), Color3.fromRGB(30, 31, 34), MAT.Concrete)
-			g.box("Backdrop", Vector3.new(x + 8, 18, 1), Vector3.new(x / 2, 9, rowZ + 0.5), Color3.fromRGB(36, 37, 40), MAT.Concrete)
-			g.box("CeilingSlab", Vector3.new(x + 8, 1, deepest + 14), Vector3.new(x / 2, 18.5, rowZ - 4), Color3.fromRGB(30, 31, 34), MAT.Concrete)
+			g.box("Floor", Vector3.new(x + 20, 1, deepest + 14), Vector3.new(x / 2 - 6, -0.5, rowZ - 4), Color3.fromRGB(30, 31, 34), MAT.Concrete)
+			g.box("Backdrop", Vector3.new(x + 20, 18, 1), Vector3.new(x / 2 - 6, 9, rowZ + 0.5), Color3.fromRGB(36, 37, 40), MAT.Concrete)
+			g.box("CeilingSlab", Vector3.new(x + 20, 1, deepest + 14), Vector3.new(x / 2 - 6, 18.5, rowZ - 4), Color3.fromRGB(30, 31, 34), MAT.Concrete)
 			for lx = 0, x, 12 do
 				local lamp = g.box("GalleryLight", Vector3.new(1, 0.2, 1), Vector3.new(lx, 14, rowZ - 9), COL.lamp, MAT.SmoothPlastic)
 				lamp.Transparency = 1
