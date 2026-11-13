@@ -1,4 +1,4 @@
-# Working on Mod Name
+# Working on Chimera
 
 ## Rules
 - Answer directly. No preamble, filler, affirmations, or trailing summary clauses.
