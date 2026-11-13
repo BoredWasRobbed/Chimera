@@ -3,7 +3,8 @@
 --   Cloaked   within 45 studs with line of sight
 --   Exposed   line of sight at any range (up to ExposedRange)
 --   Revealed  every living merc
---   Overwatch the camera an eliminated merc watches can see it (hook for milestone 2)
+--   Tagged    every living merc, for 3 s after an Overwatch Tag
+--   Overwatch the camera an eliminated merc (or a spectator) watches can see it
 -- Dock contents are gated the same way: a merc learns that a dock emptied (or is booting) only when they
 -- can see the dock or are standing near it. The Chimera's own client gets every dock change at once.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -58,6 +59,9 @@ local function evaluate(view: MercView, eye: Vector3?, eyeLead: Vector3?, shell:
 	if shell.visibility == "Revealed" then
 		return true, "revealed"
 	end
+	if eye and shell.taggedUntil > os.clock() then
+		return true, "tagged by Overwatch"
+	end
 	if view.overwatchCamera then
 		local cam = MapData.cameras[view.overwatchCamera]
 		if SecurityCameras.isBroken(view.overwatchCamera) then
@@ -100,7 +104,7 @@ local function seesDock(eye: Vector3, eyeLead: Vector3, dock): boolean
 	return Sight.anyClear(eye, points, dock.model) or Sight.anyClear(eyeLead, points, dock.model)
 end
 
--- { kind, id, time, x, y, z, yaw, speed, visibility, epoch, action, actionProgress }
+-- { kind, id, time, x, y, z, yaw, speed, visibility, epoch, action, actionProgress, tagged }
 local function pack(kind: string, shell: Shells.Shell, serverTime: number): { any }
 	local p = shell.state.pos
 	local v = shell.state.vel
@@ -109,7 +113,22 @@ local function pack(kind: string, shell: Shells.Shell, serverTime: number): { an
 		action = shell.anim.kind
 		progress = math.clamp((os.clock() - shell.anim.startedAt) / shell.anim.seconds, 0, 1)
 	end
-	return { kind, shell.id, serverTime, p.X, p.Y, p.Z, shell.yaw, math.sqrt(v.X * v.X + v.Z * v.Z), shell.visibility, shell.epoch, action, progress }
+	local tagged = shell.taggedUntil > os.clock()
+	return { kind, shell.id, serverTime, p.X, p.Y, p.Z, shell.yaw, math.sqrt(v.X * v.X + v.Z * v.Z), shell.visibility, shell.epoch, action, progress, tagged }
+end
+
+-- Can this security camera see the shell right now? (Overwatch Tag.)
+function Perception.cameraSeesShell(cameraId: string, shell: Shells.Shell): boolean
+	local cam = MapData.cameras[cameraId]
+	if not cam or SecurityCameras.isBroken(cameraId) then
+		return false
+	end
+	return Sight.cameraSees(cam, shellPoints(shell, cam.origin), nil)
+end
+
+function Perception.overwatchCamera(player: Player): string?
+	local view = views[player]
+	return view and view.overwatchCamera
 end
 
 function Perception.addMerc(player: Player)

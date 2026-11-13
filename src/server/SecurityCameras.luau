@@ -64,6 +64,18 @@ function SecurityCameras.breakCamera(id: string): boolean
 	return true
 end
 
+-- A new round: every camera back online.
+function SecurityCameras.reset()
+	for id in brokenUntil do
+		local cam = MapData.cameras[id]
+		if cam then
+			cam.model:SetAttribute("BrokenUntil", nil)
+		end
+		setDark(id, false)
+	end
+	table.clear(brokenUntil)
+end
+
 -- The camera a model part belongs to, if any.
 function SecurityCameras.idOf(instance: Instance): string?
 	local model = instance:FindFirstAncestorOfClass("Model")

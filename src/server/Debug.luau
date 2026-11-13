@@ -1,6 +1,8 @@
 -- Studio-only test tools. Nothing here runs in a live server.
 --   Debug remote (the in-game DEV panel): switch role, a test shell that patrols or hunts, its
---   visibility state, the perception overlay, dummy mercs, class, "down me", respawn, door locks.
+--   visibility state, the perception overlay, dummy mercs, class, "down me", respawn, door locks, and the
+--   match: skip a phase, move the clock, fill the meter, force either finale, add held time, and the
+--   Studio rules (1 player is enough, no idle kicks).
 --   ServerScriptService.ChimeraTestHook (BindableFunction): JSON state and commands for automated checks.
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -14,15 +16,20 @@ local Chimera = require(script.Parent.Chimera)
 local Decoys = require(script.Parent.Decoys)
 local Docks = require(script.Parent.Docks)
 local Doors = require(script.Parent.Doors)
+local Finale = require(script.Parent.Finale)
 local Health = require(script.Parent.Health)
 local Lights = require(script.Parent.Lights)
 local MapData = require(script.Parent.MapData)
+local Match = require(script.Parent.Match)
 local Perception = require(script.Parent.Perception)
+local Pings = require(script.Parent.Pings)
 local Roles = require(script.Parent.Roles)
 local SecurityCameras = require(script.Parent.SecurityCameras)
 local ShellCombat = require(script.Parent.ShellCombat)
 local Shells = require(script.Parent.Shells)
+local Terminals = require(script.Parent.Terminals)
 local Traps = require(script.Parent.Traps)
+local Upload = require(script.Parent.Upload)
 local Weapons = require(script.Parent.Weapons)
 
 local Debug = {}
@@ -250,6 +257,7 @@ local function state(): { [string]: any }
 			speedScale = shell.speedScale,
 			assimilating = shell.assimilating ~= nil,
 			leaping = shell.leap ~= nil,
+			tagged = shell.taggedUntil > os.clock(),
 			lastSeq = shell.lastSeq,
 			queued = #shell.buffer,
 			debt = shell.debt,
@@ -293,7 +301,30 @@ local function state(): { [string]: any }
 			table.insert(out.camerasBroken, id)
 		end
 	end
+	out.match = Match.describe()
+	out.terminals = {}
+	for id, terminal in MapData.terminals do
+		out.terminals[id] = {
+			progress = terminal.model:GetAttribute("Progress"),
+			operator = terminal.model:GetAttribute("Operator"),
+			done = Terminals.isDone(id),
+			locked = Terminals.isLocked(id),
+		}
+	end
+	for _, player in Players:GetPlayers() do
+		local info = out.players[player.Name]
+		info.team = player:GetAttribute("Team")
+		info.weight = player:GetAttribute("ChimeraWeight")
+		info.mercOnly = player:GetAttribute("MercOnly")
+		info.operating = player.Character and player.Character:GetAttribute("Operating")
+		info.pingCharges = player:GetAttribute("PingCharges")
+	end
 	return out
+end
+
+local function playerNamed(name: any): Player?
+	local player = if type(name) == "string" then Players:FindFirstChild(name) else nil
+	return if player and player:IsA("Player") then player else nil
 end
 
 local function testCommand(command: string, ...): any
@@ -417,6 +448,77 @@ local function testCommand(command: string, ...): any
 			ShellCombat.stagger(shell, args[1] or 0.5)
 		end
 		return { ok = true }
+	-- Milestone 3: the match.
+	elseif command == "match" then
+		return Match.describe()
+	elseif command == "skipPhase" then
+		return { message = Match.skipPhase(), match = Match.describe() }
+	elseif command == "addTime" then
+		return { message = Match.addTime(args[1]) }
+	elseif command == "setUpload" then
+		return { message = Match.setUpload(args[1]) }
+	elseif command == "finale" then
+		return { message = Match.forceFinale(args[1]) }
+	elseif command == "hold" then
+		Finale.addHold(args[1])
+		return { held = Finale.held() }
+	elseif command == "studio" then
+		return { message = Match.setStudioOption(args[1], args[2] == true) }
+	elseif command == "terminal" then
+		Terminals.setProgress(args[1], args[2])
+		return { ok = true }
+	elseif command == "operate" then
+		-- As if the player pressed (true) or released (false) E at the terminal.
+		local player = playerNamed(args[1])
+		if not player then
+			return { error = "no such player" }
+		end
+		if args[3] == false then
+			Terminals.release(player)
+			return { ok = true }
+		end
+		local ok, err = Terminals.begin(player, args[2])
+		return { ok = ok, error = err }
+	elseif command == "corrupt" then
+		local ok, err = Terminals.corrupt(args[1])
+		return { ok = ok, error = err, upload = Upload.get() }
+	elseif command == "action" then
+		-- A MatchAction as if this player's client sent it: mercOnly, class, ping, owPing, owTag, spectate.
+		local player = playerNamed(args[1])
+		if not player then
+			return { error = "no such player" }
+		end
+		local a = args[3]
+		if type(a) == "table" and #a == 3 then
+			a = Vector3.new(a[1], a[2], a[3])
+		end
+		local b = args[4]
+		if type(b) == "table" and #b == 3 then
+			b = Vector3.new(b[1], b[2], b[3])
+		end
+		Match.action(player, args[2], a, b)
+		return { ok = true }
+	elseif command == "fakePing" then
+		Pings.fake(args[1], Vector3.new(args[2], args[3], args[4]), playerNamed(args[5]))
+		return { ok = true }
+	elseif command == "idle" then
+		local player = playerNamed(args[1])
+		if player then
+			Match.setIdle(player, args[2])
+		end
+		return { ok = player ~= nil }
+	elseif command == "eliminate" then
+		-- A player's body or a dummy's, by name; reason "bledOut" (default) or "assimilated".
+		local player = playerNamed(args[1])
+		local body = if player then Health.ofPlayer(player) else Health.get(workspace:FindFirstChild(args[1]) :: Model?)
+		if not body then
+			return { error = "no body" }
+		end
+		Health.eliminate(body, args[2] or "bledOut", "test")
+		return { ok = true }
+	elseif command == "endMatch" then
+		Match.endMatch(args[1], args[2] or "test")
+		return { ok = true }
 	end
 	return { error = `unknown command {command}` }
 end
@@ -454,6 +556,23 @@ function Debug.init()
 			Health.resetDownCounts()
 			Roles.respawn(player)
 			message = "respawned"
+		elseif command == "skipPhase" then
+			message = Match.skipPhase()
+		elseif command == "addTime" then
+			message = Match.addTime(60)
+		elseif command == "upload" then
+			message = Match.setUpload(Upload.get() + 0.1)
+		elseif command == "forcePurge" then
+			message = Match.forceFinale("Purge")
+		elseif command == "forceUpload" then
+			message = Match.forceFinale("Upload")
+		elseif command == "hold" then
+			Finale.addHold(10)
+			message = string.format("held %d s", Finale.held())
+		elseif command == "minPlayers" then
+			message = Match.setStudioOption("minPlayers", not Match.studioOption("minPlayers"))
+		elseif command == "afk" then
+			message = Match.setStudioOption("afk", not Match.studioOption("afk"))
 		end
 		if message then
 			remote:FireClient(player, "message", message)

@@ -41,7 +41,8 @@ end
 
 local function apply(id: string, state: string)
 	states[id] = state
-	if state == "empty" then
+	-- "offline": a shut-down dock (its wing's terminal was rebooted, or Lockdown) holds no usable shell.
+	if state == "empty" or state == "offline" then
 		local model = models[id]
 		if model then
 			models[id] = nil

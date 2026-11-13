@@ -69,7 +69,7 @@ end
 local function build()
 	local gui = Hud.gui()
 	ui.vignette = Hud.frame(gui, { Name = "HeartVignette", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(200, 205, 215), BackgroundTransparency = 1, ZIndex = 1 })
-	ui.heart = Hud.text(gui, { Name = "Heartbeat", Text = "♥", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(0.5, -165, 0, 14), Size = UDim2.fromOffset(40, 40), TextSize = 24, TextColor3 = Color3.fromRGB(235, 235, 240), TextXAlignment = Enum.TextXAlignment.Center, TextTransparency = 1 })
+	ui.heart = Hud.text(gui, { Name = "Heartbeat", Text = "♥", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(0.5, -165, 0, 70), Size = UDim2.fromOffset(40, 40), TextSize = 24, TextColor3 = Color3.fromRGB(235, 235, 240), TextXAlignment = Enum.TextXAlignment.Center, TextTransparency = 1 })
 	ui.ping = Hud.text(gui, { Name = "TrackerPing", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.5, 18), Size = UDim2.fromOffset(160, 18), TextSize = 14, TextColor3 = Color3.fromRGB(170, 255, 200), TextXAlignment = Enum.TextXAlignment.Center, TextTransparency = 1 })
 	local screen = Hud.frame(gui, { Name = "TrackerScreen", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, -220, 1, -40), Size = UDim2.fromOffset(150, 150), BackgroundColor3 = Color3.fromRGB(8, 20, 14), BackgroundTransparency = 0.15, Visible = held })
 	local corner = Instance.new("UICorner")

@@ -16,6 +16,7 @@ local Doors = require(script.Parent.Doors)
 local Lights = require(script.Parent.Lights)
 local MapData = require(script.Parent.MapData)
 local MatchEvents = require(script.Parent.MatchEvents)
+local MatchState = require(script.Parent.MatchState)
 local SecurityCameras = require(script.Parent.SecurityCameras)
 local ShellCombat = require(script.Parent.ShellCombat)
 local Shells = require(script.Parent.Shells)
@@ -43,6 +44,7 @@ export type Agent = {
 	takeBlockedUntil: number, -- after a shell is destroyed with the Chimera inside
 	decoyReadyAt: number,
 	lastAlertAt: number,
+	locked: boolean, -- in a finale the Chimera can't leave its body
 }
 
 local Chimera = {}
@@ -55,6 +57,7 @@ local agents: { [string]: Agent } = {}
 local byPlayer: { [Player]: Agent } = {}
 local watchers: { [string]: number } = {}
 local stateRemote: RemoteEvent
+local bodyLostListeners: { (Agent, string) -> () } = {}
 
 local INSTANT = { Blackout = true, LockDoor = true }
 local HOLDS = { TakeShell = true, CorruptTerminal = true }
@@ -69,11 +72,16 @@ local function toast(agent: Agent, text: string)
 	send(agent, { type = "toast", text = text })
 end
 
+-- In either finale a body doesn't drain energy, so the Chimera can fight for the full two minutes.
+local function drains(agent: Agent): boolean
+	return not agent.noDrain and MatchState.finale == nil
+end
+
 local function energyRate(agent: Agent): number
 	if agent.mode == "shell" then
-		return if agent.noDrain then 0 else -Config.Shell.Drain
+		return if drains(agent) then -Config.Shell.Drain else 0
 	end
-	return if agent.energy >= C.EnergyMax then 0 else C.EnergyRegen
+	return if agent.energy >= C.EnergyMax then 0 else C.EnergyRegen * MatchState.regenScale()
 end
 
 local function syncEnergy(agent: Agent)
@@ -164,13 +172,21 @@ local function cancelHold(agent: Agent, reason: string?)
 	send(agent, { type = "holdEnd", kind = hold.kind, ok = false, reason = reason })
 end
 
-local function enterShell(agent: Agent, dockId: string)
+-- force: boot a shell at this dock whatever its state (a finale's body); a stocked dock still gives up
+-- its dormant shell.
+local function enterShell(agent: Agent, dockId: string, force: boolean?)
 	local dock = MapData.docks[dockId]
-	if not dock or not Docks.take(dockId) then
+	if not dock then
+		return false
+	end
+	if not Docks.take(dockId) and not force then
 		return false
 	end
 	if agent.mode == "facility" then
 		watch(agent.cameraId, false)
+	elseif agent.mode == "hopping" then
+		agent.cameraId = agent.hopTarget or agent.cameraId
+		agent.hopTarget = nil
 	end
 	local shell = Shells.spawn(agent, agent.player, dock.spawn, dockId)
 	agent.shell = shell
@@ -221,6 +237,9 @@ local function leaveShell(agent: Agent, reason: string)
 	end
 	send(agent, { type = "shellLeft", cameraId = agent.cameraId, reason = reason })
 	syncEnergy(agent)
+	for _, listener in bodyLostListeners do
+		task.spawn(listener, agent, reason)
+	end
 end
 
 local function beginHop(agent: Agent, targetId: any)
@@ -258,6 +277,9 @@ local function checkAction(agent: Agent, kind: string, id: string): string?
 	if agent.mode == "hopping" then
 		return "Relinking"
 	end
+	if not MatchState.interfaceOnline() then
+		return "Still booting: Interface comes online when the race starts"
+	end
 	if kind == "TakeShell" then
 		if agent.mode ~= "facility" then
 			return "Shells can only be taken from a camera"
@@ -271,8 +293,13 @@ local function checkAction(agent: Agent, kind: string, id: string): string?
 			return "Unknown dock"
 		elseif state == "empty" then
 			return "That dock is empty"
+		elseif state == "offline" then
+			return "That dock is shut down"
 		end
 	elseif kind == "CorruptTerminal" then
+		if Terminals.isDone(id) then
+			return "That terminal is already rebooted"
+		end
 		if Terminals.isLocked(id) then
 			return "That terminal is locked"
 		end
@@ -284,6 +311,9 @@ local function checkAction(agent: Agent, kind: string, id: string): string?
 			return "Already locked"
 		end
 	elseif kind == "Blackout" then
+		if MatchState.finale == "Purge" and id == MatchState.coreRoom then
+			return "The Core is floodlit"
+		end
 		if Lights.isDark(id) then
 			return "Already dark"
 		end
@@ -344,6 +374,10 @@ end
 local function beginLeave(agent: Agent)
 	if agent.mode ~= "shell" then
 		return
+	end
+	if agent.locked then
+		toast(agent, if MatchState.finale == "Purge" then "Lockdown: you're locked into this body" else "No leaving during the finale")
+		return send(agent, { type = "holdEnd", kind = "Leave", ok = false, reason = "locked" })
 	end
 	cancelHold(agent, "replaced")
 	local now = os.clock()
@@ -449,6 +483,7 @@ local function newAgent(key: string, player: Player?): Agent
 		takeBlockedUntil = 0,
 		decoyReadyAt = 0,
 		lastAlertAt = 0,
+		locked = false,
 	}
 	agents[key] = agent
 	watch(agent.cameraId, true)
@@ -478,6 +513,9 @@ local function armTrap(agent: Agent, id: string)
 	if agent.mode == "hopping" then
 		return toast(agent, "Relinking")
 	end
+	if not MatchState.interfaceOnline() then
+		return toast(agent, "Still booting: Interface comes online when the race starts")
+	end
 	if not Traps.get(id) then
 		return toast(agent, "No such trap")
 	end
@@ -494,6 +532,9 @@ end
 -- Static Decoy (Utility): a fake merc walking from the aimed floor point, from a camera or a shell.
 local function castDecoy(agent: Agent, point: any)
 	local now = os.clock()
+	if not MatchState.interfaceOnline() then
+		return toast(agent, "Still booting: modules come online when the race starts")
+	end
 	if now < agent.decoyReadyAt then
 		return toast(agent, string.format("Static Decoy ready in %d s", math.ceil(agent.decoyReadyAt - now)))
 	end
@@ -511,7 +552,7 @@ local function castDecoy(agent: Agent, point: any)
 	if not ok then
 		return toast(agent, err or "That didn't work")
 	end
-	agent.decoyReadyAt = now + Config.Modules.StaticDecoy.Cooldown
+	agent.decoyReadyAt = now + Config.Modules.StaticDecoy.Cooldown * MatchState.cooldownScale()
 	sendModules(agent)
 end
 
@@ -725,6 +766,55 @@ function Chimera.setEnergy(agent: Agent, value: number)
 	syncEnergy(agent)
 end
 
+-- Finales: put the Chimera in a body at this dock now (see enterShell's force).
+function Chimera.forceBody(agent: Agent, dockId: string): Shells.Shell?
+	if agents[agent.key] ~= agent then
+		return nil
+	end
+	if agent.shell then
+		return agent.shell
+	end
+	cancelHold(agent, "boot")
+	if not enterShell(agent, dockId, true) then
+		return nil
+	end
+	local dock = MapData.docks[dockId]
+	Cues.emit("ServoWhine", (dock.spawn * CFrame.new(0, 3, 0)).Position, Config.Shell.WhineRange)
+	return agent.shell
+end
+
+-- In a finale the Chimera can't leave its body.
+function Chimera.setLocked(agent: Agent, locked: boolean)
+	agent.locked = locked
+end
+
+-- listener(agent, reason) runs whenever an agent loses its shell: "left", "energy", "fell" or "destroyed".
+function Chimera.onBodyLost(listener: (Agent, string) -> ())
+	table.insert(bodyLostListeners, listener)
+end
+
+function Chimera.notify(agent: Agent, message: { [string]: any })
+	send(agent, message)
+end
+
+-- An alert on every Chimera's HUD (a reboot started, Lockdown...).
+function Chimera.alertAll(text: string, extra: { [string]: any }?)
+	for _, agent in agents do
+		local message: { [string]: any } = { type = "alert", text = text }
+		for key, value in extra or {} do
+			message[key] = value
+		end
+		send(agent, message)
+	end
+end
+
+-- A new round: no Chimera agents (players' or test bots') are left.
+function Chimera.clear()
+	for _, agent in agents do
+		removeAgent(agent)
+	end
+end
+
 function Chimera.tick(dt: number)
 	local now = os.clock()
 	for _, agent in agents do
@@ -735,7 +825,7 @@ function Chimera.tick(dt: number)
 		end
 
 		if agent.mode == "shell" then
-			if not agent.noDrain then
+			if drains(agent) then
 				agent.energy -= Config.Shell.Drain * dt
 			end
 			if agent.energy <= 0 then
@@ -743,7 +833,7 @@ function Chimera.tick(dt: number)
 				leaveShell(agent, "energy")
 			end
 		else
-			agent.energy = math.min(C.EnergyMax, agent.energy + C.EnergyRegen * dt)
+			agent.energy = math.min(C.EnergyMax, agent.energy + C.EnergyRegen * MatchState.regenScale() * dt)
 		end
 
 		local hold = agent.hold

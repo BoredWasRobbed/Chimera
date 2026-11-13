@@ -72,6 +72,12 @@ function Traps.disarmAll(agentKey: string)
 	end
 end
 
+-- A new round: nothing armed, no steam hanging in the air.
+function Traps.reset()
+	table.clear(armed)
+	table.clear(clouds)
+end
+
 local function slowMerc(body: Health.Body, scale: number, seconds: number)
 	body.model:SetAttribute("SlowScale", scale)
 	body.model:SetAttribute("SlowUntil", workspace:GetServerTimeNow() + seconds)

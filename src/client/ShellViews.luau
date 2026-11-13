@@ -22,6 +22,7 @@ type View = {
 	highlight: Highlight?,
 	lastLook: string,
 	lastAmount: number,
+	tagged: boolean, -- an Overwatch Tag: outlined (orange) whatever its visibility
 }
 
 local ShellViews = {}
@@ -104,16 +105,20 @@ local function setLook(view: View, speed: number)
 		view.lastLook = look
 		view.lastAmount = amount
 	end
-	if look == "revealed" and not view.highlight then
+	-- Revealed: a red outline. Tagged by Overwatch: an orange one.
+	local outline = if look == "revealed" then Color3.fromRGB(255, 25, 25) elseif view.tagged then Color3.fromRGB(255, 150, 40) else nil
+	if outline and not view.highlight then
 		local highlight = Instance.new("Highlight")
 		highlight.FillTransparency = 1
-		highlight.OutlineColor = Color3.fromRGB(255, 25, 25)
 		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 		highlight.Parent = view.model
 		view.highlight = highlight
-	elseif look ~= "revealed" and view.highlight then
+	elseif not outline and view.highlight then
 		view.highlight:Destroy()
 		view.highlight = nil
+	end
+	if outline and view.highlight and view.highlight.OutlineColor ~= outline then
+		view.highlight.OutlineColor = outline
 	end
 end
 
@@ -139,7 +144,7 @@ local function push(message: { any })
 		local model = ShellRig.build(`Shell_{id}`, true)
 		ShellRig.setSolid(model, true)
 		model.Parent = folder
-		view = { model = model, snapshots = {}, visibility = "Cloaked", epoch = 0, action = nil, phase = 0, highlight = nil, lastLook = "", lastAmount = -1 }
+		view = { model = model, snapshots = {}, visibility = "Cloaked", epoch = 0, action = nil, phase = 0, highlight = nil, lastLook = "", lastAmount = -1, tagged = false }
 		views[id] = view
 	end
 	view.visibility = if type(message[9]) == "string" then message[9] else "Cloaked"
@@ -149,6 +154,7 @@ local function push(message: { any })
 		table.clear(view.snapshots)
 	end
 	view.action = if type(message[11]) == "string" then { kind = message[11], progress = tonumber(message[12]) or 0 } else nil
+	view.tagged = message[13] == true
 	table.insert(view.snapshots, { t = t, pos = Vector3.new(x, y, z), yaw = yaw, speed = tonumber(message[8]) or 0 })
 	while #view.snapshots > 12 do
 		table.remove(view.snapshots, 1)

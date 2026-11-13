@@ -16,11 +16,15 @@
 --     Lens                 its LookVector is the camera's resting direction
 --     RecLight             lit red while the Chimera watches through this camera
 --   Lights/<RoomId>        Folder: TargetKind="Blackout", TargetId=<RoomId>; light fixtures and a Panel part
---   Rooms/<RoomId>         invisible box part covering the room, attribute DisplayName
+--   Rooms/<RoomId>         invisible box part covering the room, attributes DisplayName and Wing
+--                          ("CORE", "INSERTION", or a wing such as "SF"; a terminal's wing is its room's)
 --   Stations/<Id>          Model: a flashlight charging station; its Pad part is where mercs stand
 --   Traps/<Id>             Model: TrapKind ("Steam" or "Conduit"), Room, TargetKind="Overload", TargetId
 --     Target               what the Chimera aims at to arm it (a valve or junction box)
 --     Floor                invisible marker on the floor; mercs near it set the trap off
+--   Core/Platform          invisible box over the Core platform the finales are held on
+--   Floodlights/*          parts with a light, off until the Purge finale floodlights the Core
+--   EmergencyLights/<RoomId>  parts with a light, off until a terminal in the room's wing is rebooted
 local Config = require(script.Parent.Config)
 local CameraMath = require(script.Parent.CameraMath)
 
@@ -70,6 +74,7 @@ export type TerminalInfo = {
 export type RoomInfo = {
 	id: string,
 	displayName: string,
+	wing: string,
 	bounds: BasePart,
 	fixtures: { BasePart },
 	panel: BasePart?,
@@ -203,6 +208,7 @@ function FacilityMap.rooms(): { [string]: RoomInfo }
 			out[bounds.Name] = {
 				id = bounds.Name,
 				displayName = bounds:GetAttribute("DisplayName") or bounds.Name,
+				wing = bounds:GetAttribute("Wing") or "",
 				bounds = bounds,
 				fixtures = fixtures,
 				panel = panel,
@@ -248,6 +254,57 @@ function FacilityMap.traps(): { [string]: TrapInfo }
 		end
 	end
 	return out
+end
+
+-- The Core: its room (the one whose Wing is "CORE") and the platform the finales are held on.
+function FacilityMap.core(rooms: { [string]: RoomInfo }): (string?, BasePart?)
+	local _, facility = FacilityMap.folders()
+	local room = nil
+	for id, info in rooms do
+		if info.wing == "CORE" then
+			room = id
+			break
+		end
+	end
+	local folder = facility:FindFirstChild("Core")
+	local platform = folder and folder:FindFirstChild("Platform")
+	return room, if platform and platform:IsA("BasePart") then platform else nil
+end
+
+function FacilityMap.floodlights(): { BasePart }
+	local _, facility = FacilityMap.folders()
+	local out = {}
+	local folder = facility:FindFirstChild("Floodlights")
+	for _, part in (if folder then folder:GetChildren() else {}) do
+		if part:IsA("BasePart") then
+			table.insert(out, part)
+		end
+	end
+	return out
+end
+
+-- Emergency light parts by room id.
+function FacilityMap.emergencyLights(): { [string]: { BasePart } }
+	local _, facility = FacilityMap.folders()
+	local out = {}
+	local folder = facility:FindFirstChild("EmergencyLights")
+	for _, roomFolder in (if folder then folder:GetChildren() else {}) do
+		local parts = {}
+		for _, part in roomFolder:GetChildren() do
+			if part:IsA("BasePart") then
+				table.insert(parts, part)
+			end
+		end
+		out[roomFolder.Name] = parts
+	end
+	return out
+end
+
+-- Is a point inside a box part (any rotation)?
+function FacilityMap.inBox(box: BasePart, position: Vector3): boolean
+	local rel = box.CFrame:PointToObjectSpace(position)
+	local half = box.Size / 2
+	return math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
 end
 
 -- The Interface target an instance belongs to: the nearest ancestor (or itself) with a TargetKind attribute.

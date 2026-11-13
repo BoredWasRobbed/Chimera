@@ -19,6 +19,8 @@ local DEFINITIONS = {
 	MercAction = "RemoteEvent", -- merc client -> server: fire, reload, gear, flashlight, stim, aim, spectate
 	MercEvents = "RemoteEvent", -- server -> one merc: tracker, heartbeat, hit markers, blinding, trails
 	Combat = "RemoteEvent", -- server -> clients: shots, explosions and other public effects
+	MatchAction = "RemoteEvent", -- client -> server: lobby toggle, class pick, pings, Overwatch, activity
+	MatchFeed = "RemoteEvent", -- server -> clients: pings, tags and match notices
 	Debug = "RemoteEvent", -- Studio only
 }
 

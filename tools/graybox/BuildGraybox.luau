@@ -1,7 +1,7 @@
 -- Builds the graybox of Axiom Data Vault: the Core plus three wings (Server Farms, Maintenance Tunnels,
 -- Office Wing) and the Insertion lobby, with 14 security cameras, 8 shell docks, 11 lockable doors,
--- 3 placeholder terminals, 5 charging stations and 10 Overload traps, laid out to match
--- src/shared/FacilityMap.
+-- 3 Mainframe Terminals, 5 charging stations, 10 Overload traps, the Core platform with its
+-- floodlights, and emergency lights in every wing room, laid out to match src/shared/FacilityMap.
 --
 -- A one-time generator, not game code: Rojo syncs it to ServerStorage.DevTools and nothing requires it
 -- at runtime. Running it REPLACES Workspace.Map and Workspace.Facility, so hand edits made in Studio
@@ -165,7 +165,7 @@ local TRAPS = {
 	{ id = "TRAP_LOBBY", kind = "Conduit", room = "OW_LOBBY", target = { -70, 3, 20.6 }, floor = { -70, 17 } },
 }
 
--- Placeholder Mainframe Terminals (reboots arrive in milestone 3), one per wing.
+-- Mainframe Terminals, one per wing.
 local TERMINALS = {
 	{ id = "TERM_SF", room = "SF_TERMINAL", name = "Server Farm terminal", pos = { 0, -216 }, face = { 0, -200 } },
 	{ id = "TERM_MT", room = "MT_BOILER", name = "Boiler Room terminal", pos = { 208, 0 }, face = { 190, 0 } },
@@ -247,6 +247,28 @@ local function buildRooms(map: Folder, facility: Folder)
 
 		local bounds = part(rooms, r.id, Vector3.new(w, r.h, d), CFrame.new(cx, r.h / 2, cz), C.off, nil, MARKER)
 		bounds:SetAttribute("DisplayName", r.name)
+		bounds:SetAttribute("Wing", r.zone)
+
+		-- Emergency lights (off until the wing's terminal is rebooted): one red lamp per ~50 studs.
+		if r.zone ~= "CORE" and r.zone ~= "INSERTION" then
+			local emergency = folder(facility:FindFirstChild("EmergencyLights") :: Folder, r.id)
+			local ex = math.max(1, math.round(w / 50))
+			local ez = math.max(1, math.round(d / 50))
+			for i = 1, ex do
+				for j = 1, ez do
+					local x = r.x0 + w * (i - 0.5) / ex
+					local z = r.z0 + d * (j - 0.5) / ez
+					local lamp = part(emergency, "EmergencyLamp", Vector3.new(1.4, 0.5, 1.4), CFrame.new(x, r.h - 0.3, z + 3), C.off, Enum.Material.SmoothPlastic, { CanCollide = false, CanTouch = false, CanQuery = false, CastShadow = false })
+					local glow = Instance.new("PointLight")
+					glow.Color = Color3.fromRGB(255, 60, 40)
+					glow.Range = math.min(math.max(w, d) * 0.7, 40)
+					glow.Brightness = 1.4
+					glow.Shadows = false
+					glow.Enabled = false
+					glow.Parent = lamp
+				end
+			end
+		end
 
 		local roomLights = folder(lights, r.id)
 		roomLights:SetAttribute("TargetKind", "Blackout")
@@ -531,6 +553,35 @@ local function buildProps(map: Folder, facility: Folder)
 	end
 end
 
+-- The Core platform the finales are held on (a low ring round the server column, easy to step onto),
+-- its invisible hold zone, and four floodlights for the Purge finale.
+local function buildCore(map: Folder, facility: Folder)
+	local geometry = map:FindFirstChild("Geometry") :: Folder
+	local size = 40
+	part(geometry, "CorePlatform", Vector3.new(size, 0.8, size), CFrame.new(0, 0.4, 0), C.metal, Enum.Material.DiamondPlate)
+	for _, side in { -1, 1 } do
+		part(geometry, "PlatformEdge", Vector3.new(size, 0.12, 0.4), CFrame.new(0, 0.86, side * (size / 2 - 0.3)), C.amber, Enum.Material.Neon, NOT_SOLID)
+		part(geometry, "PlatformEdge", Vector3.new(0.4, 0.12, size), CFrame.new(side * (size / 2 - 0.3), 0.86, 0), C.amber, Enum.Material.Neon, NOT_SOLID)
+	end
+	local core = facility:FindFirstChild("Core") :: Folder
+	part(core, "Platform", Vector3.new(size, 12, size), CFrame.new(0, 6, 0), C.off, nil, MARKER)
+
+	local floods = facility:FindFirstChild("Floodlights") :: Folder
+	for _, at in { { 54, 54 }, { -54, 54 }, { 54, -54 }, { -54, -54 } } do
+		local pos = Vector3.new(at[1], 30, at[2])
+		local lamp = part(floods, "Floodlight", Vector3.new(3, 1.6, 3), CFrame.lookAt(pos, Vector3.new(0, 0, 0)), C.trim, Enum.Material.Metal, { CanCollide = false, CanTouch = false, CanQuery = false, CastShadow = false })
+		local beam = Instance.new("SpotLight")
+		beam.Face = Enum.NormalId.Front
+		beam.Color = Color3.fromRGB(235, 245, 255)
+		beam.Brightness = 6
+		beam.Range = 60
+		beam.Angle = 75
+		beam.Shadows = true
+		beam.Enabled = false
+		beam.Parent = lamp
+	end
+end
+
 local function setupLighting()
 	Lighting.ClockTime = 0
 	Lighting.Brightness = 0
@@ -570,11 +621,12 @@ return function()
 	end
 	local facility = Instance.new("Folder")
 	facility.Name = "Facility"
-	for _, name in { "Cameras", "Lights", "Rooms", "Spawns", "Stations", "Traps" } do
+	for _, name in { "Cameras", "Lights", "Rooms", "Spawns", "Stations", "Traps", "Core", "Floodlights", "EmergencyLights" } do
 		folder(facility, name)
 	end
 
 	buildRooms(map, facility)
+	buildCore(map, facility)
 	task.wait()
 	buildDoors(map)
 	buildCameras(facility)

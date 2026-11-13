@@ -38,6 +38,7 @@ local blindUntil, blindSeconds = 0, 1
 local cameraParams = RaycastParams.new()
 local aimParams = RaycastParams.new()
 local clientFolder: Folder
+local lookFrozen = false -- the ping wheel uses the mouse while it's open
 
 local function serverNow(): number
 	return workspace:GetServerTimeNow()
@@ -60,6 +61,12 @@ local function isDowned(): boolean
 	return c ~= nil and c:GetAttribute("Downed") == true
 end
 
+-- Rebooting a terminal: the operator can't shoot or use gear.
+local function operating(): boolean
+	local c = player.Character
+	return c ~= nil and c:GetAttribute("Operating") ~= nil
+end
+
 local function freeCursor(): boolean
 	return UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) or UserInputService:GetFocusedTextBox() ~= nil
 end
@@ -74,7 +81,7 @@ end
 
 local function canFire(): boolean
 	local c, root = character()
-	return c ~= nil and root ~= nil and not isDowned() and not DetectionHud.isHeld() and not freeCursor() and not reloading() and ammo() > 0
+	return c ~= nil and root ~= nil and not isDowned() and not operating() and not DetectionHud.isHeld() and not freeCursor() and not reloading() and ammo() > 0
 end
 
 local function muzzle(): Vector3
@@ -185,7 +192,7 @@ local function render(dt: number)
 	local free = freeCursor()
 	UserInputService.MouseBehavior = if free then Enum.MouseBehavior.Default else Enum.MouseBehavior.LockCenter
 	UserInputService.MouseIconEnabled = free
-	if not free then
+	if not free and not lookFrozen then
 		local delta = UserInputService:GetMouseDelta()
 		yaw -= math.rad(delta.X * SENSITIVITY)
 		pitch = math.clamp(pitch - math.rad(delta.Y * SENSITIVITY), -1.3, 1.2)
@@ -257,7 +264,7 @@ local function onInputBegan(input: InputObject, processed: boolean)
 	local head = c and c:FindFirstChild("Head") :: BasePart?
 	if key == Enum.KeyCode.R then
 		requestReload()
-	elseif key == Enum.KeyCode.G and head and not isDowned() then
+	elseif key == Enum.KeyCode.G and head and not isDowned() and not operating() then
 		actionRemote:FireServer("gear", head.Position, aimDir)
 	elseif key == Enum.KeyCode.F then
 		actionRemote:FireServer("flashlight", not (c and c:GetAttribute("Flashlight") == true))
@@ -276,10 +283,28 @@ local function onInputEnded(input: InputObject)
 	end
 end
 
--- Weld prompts are for Technicians only, and nobody can revive themselves. Prompts are shared server
--- objects, so this client hides the ones that aren't for it.
+-- Weld prompts are for Technicians only, nobody can revive themselves, and a terminal's Reboot prompt
+-- shows only while you could reboot it (during the race, not done, not locked, nobody else on it).
+-- Prompts are shared server objects, so this client hides the ones that aren't for it.
 local function filterPrompts()
 	local isTechnician = player:GetAttribute("Class") == "Technician"
+	local state = ReplicatedStorage:FindFirstChild("MatchState")
+	local racing = state ~= nil and state:GetAttribute("Phase") == "Race"
+	local terminals = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Terminals")
+	if terminals then
+		for _, model in terminals:GetChildren() do
+			local anchor = model:FindFirstChild("Console") or model:FindFirstChild("Screen")
+			local reboot = anchor and anchor:FindFirstChild("Reboot") :: ProximityPrompt?
+			if reboot then
+				local operator = model:GetAttribute("Operator")
+				local locked = (model:GetAttribute("LockedUntil") or 0) > serverNow()
+				local wanted = racing and not model:GetAttribute("Done") and not locked and (operator == nil or operator == player.Name) and not isDowned()
+				if reboot.Enabled ~= wanted then
+					reboot.Enabled = wanted
+				end
+			end
+		end
+	end
 	local doors = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Doors")
 	if doors then
 		for _, door in doors:GetChildren() do
@@ -316,7 +341,7 @@ local function buildHud()
 	local hpBar, setHp = Hud.bar(gui, {
 		Name = "MercHP",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 24),
+		Position = UDim2.new(0.5, 0, 0, 76), -- under the match bar
 		Size = UDim2.fromOffset(300, 10),
 	}, Color3.fromRGB(235, 240, 245))
 	ui.hpBar, ui.setHp = hpBar, setHp
@@ -355,6 +380,8 @@ local function buildHud()
 		"LMB fire   R reload   G gear   H Stim",
 		"F flashlight   V Flash   T motion tracker",
 		"E revive / force doors (Technician: weld)",
+		"Hold E at a terminal  reboot it",
+		"Z / middle mouse  ping (hold: wheel)",
 	})
 end
 
@@ -442,9 +469,24 @@ function MercCombat.stop()
 	end
 end
 
+-- The ping wheel takes the mouse while it's open.
+function MercCombat.setLookFrozen(frozen: boolean)
+	lookFrozen = frozen
+end
+
+-- Where the crosshair points in the world (pings mark it).
+function MercCombat.aimPoint(): Vector3
+	return aimPoint
+end
+
+function MercCombat.isRunning(): boolean
+	return running
+end
+
 function MercCombat.describe(): { [string]: any }
 	return {
 		running = running,
+		operating = operating(),
 		ammo = ammo(),
 		reloading = reloading(),
 		aimPoint = { math.floor(aimPoint.X), math.floor(aimPoint.Y), math.floor(aimPoint.Z) },

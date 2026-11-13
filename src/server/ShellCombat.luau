@@ -12,6 +12,7 @@ local Doors = require(script.Parent.Doors)
 local Flashlights = require(script.Parent.Flashlights)
 local Health = require(script.Parent.Health)
 local MapData = require(script.Parent.MapData)
+local MatchState = require(script.Parent.MatchState)
 local Shells = require(script.Parent.Shells)
 local Sight = require(script.Parent.Sight)
 
@@ -47,6 +48,11 @@ end
 
 function ShellCombat.reveal(shell: Shells.Shell, seconds: number)
 	shell.revealedUntil = math.max(shell.revealedUntil, os.clock() + seconds)
+end
+
+-- Overwatch Tag: outline the shell for living mercs.
+function ShellCombat.tag(shell: Shells.Shell, seconds: number)
+	shell.taggedUntil = math.max(shell.taggedUntil, os.clock() + seconds)
 end
 
 function ShellCombat.slow(shell: Shells.Shell, scale: number, seconds: number)
@@ -298,7 +304,7 @@ local function finishLeap(shell: Shells.Shell)
 	shell.anim = nil
 	local from = shell.state.pos
 	Shells.teleport(shell, leap.node.feet)
-	shell.leapReadyAt = os.clock() + M.SystemLeap.Cooldown
+	shell.leapReadyAt = os.clock() + M.SystemLeap.Cooldown * MatchState.cooldownScale()
 	Cues.emit("LeapLand", leap.node.feet.Position + Vector3.new(0, 3, 0), 30)
 	-- Every traversal leaves a trail the Scout can see.
 	Detection.sendTrail(from, leap.node.feet.Position)

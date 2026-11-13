@@ -101,6 +101,10 @@ Config.Cues = {
 	TripAlarm = { Label = "trip-mine alarm", SoundId = "", Volume = 1 },
 	WeldBroken = { Label = "weld breaks", SoundId = "", Volume = 1 },
 	CameraBroken = { Label = "camera shot out", SoundId = "", Volume = 0.6 },
+	RebootStart = { Label = "reboot whir", SoundId = "", Volume = 0.8 },
+	TerminalRebooted = { Label = "reboot chime", SoundId = "", Volume = 1 },
+	LockdownAlarm = { Label = "lockdown alarm", SoundId = "", Volume = 1 },
+	ScanPulse = { Label = "scan pulse", SoundId = "", Volume = 1 },
 }
 
 -- Milestone 2: combat, visibility states, downs and assimilation.
@@ -201,6 +205,86 @@ Config.Combat = {
 	LagCompensationMax = 0.35, -- seconds a shot may rewind the shell
 	MaxOriginError = 6, -- how far a shot's origin may be from the shooter's head
 	ShotBroadcastRange = 250,
+}
+
+-- Milestone 3: the full match. Rounds, terminals, the upload meter, Threat Level, finales and pings.
+
+Config.Match = {
+	LobbySeconds = 20,
+	LoadoutSeconds = 25,
+	DeploymentSeconds = 15,
+	RaceSeconds = 480, -- the race ends at 8:00 at the latest
+	FinaleSeconds = 120,
+	HardCapSeconds = 600, -- 10:00 from the start of the race
+	ResultsSeconds = 10,
+	MinPlayers = 4,
+	MaxMercs = 5,
+	IdleSeconds = 45, -- no input for this long in a match sends a player to the lobby
+	ActivityReportSeconds = 5, -- clients report recent input this often
+}
+
+Config.Terminals = {
+	RebootSeconds = 40,
+	TechnicianRebootSeconds = 28,
+	OperateRange = 8, -- the operator must stay this close to the terminal
+	PromptDistance = 7,
+	ForLockdown = 2, -- the slice has 3 terminals and 2 trigger Lockdown (the full game: 3 of 5)
+	AlertCooldown = 8, -- seconds between reboot alerts for one terminal
+}
+
+Config.Upload = {
+	PassiveSeconds = 480, -- 0 to 100% with nothing else happening (12.5% a minute)
+	MercDowned = 0.10,
+	MercAssimilated = 0.15,
+	MercBledOut = 0.05,
+	TerminalCorrupted = 0.03,
+	ShellDestroyed = -0.10, -- with the Chimera inside
+}
+
+Config.Threat = {
+	RisesAt = { 120, 240, 360 }, -- race seconds: Threat 1 -> 2 -> 3 -> 4
+	Max = 4, -- reached at once in either finale
+	RegenPerLevel = 0.15, -- energy regen bonus per level above 1
+	CooldownPerLevel = 0.10, -- ability cooldown cut per level above 1
+}
+
+Config.Finale = {
+	HoldSeconds = 45,
+	ScanSeconds = 15,
+	ScanRevealSeconds = 2, -- Purge: each scan pulse Reveals the Chimera this long
+	ScanShowSeconds = 2, -- Upload: each network scan outlines the mercs in the Core this long
+	BootSeconds = 5, -- a bodiless Chimera boots a last shell at a Core dock after this
+	UploadRespawnSeconds = 10,
+	UploadLossSeconds = 5, -- held time lost per body in the Upload finale
+}
+
+Config.PlayerCount = {
+	RebootFasterPerMissing = 0.10, -- per merc short of five at deployment
+	ShellHpLessPerMissing = 0.10,
+}
+
+Config.Pings = {
+	Seconds = 8, -- how long a ping stays up
+	RateCount = 4, -- a merc may send this many pings...
+	RateWindow = 3, -- ...per this many seconds
+	MaxDistance = 400,
+	WheelHoldSeconds = 0.25, -- holding the ping button longer than this opens the wheel
+	OverwatchCharges = 3,
+	OverwatchRecharge = 20,
+	TagSeconds = 3,
+	TagCooldown = 30,
+	Wheel = { "Chimera", "Going", "Terminal", "Revive", "Battery", "Door" },
+	Labels = {
+		Ping = "Ping",
+		Chimera = "Chimera here",
+		Going = "Going here",
+		Terminal = "Terminal",
+		Revive = "Need revive",
+		Battery = "Low battery",
+		Door = "Watch this door",
+		Overwatch = "Overwatch",
+	},
+	OnSelf = { Revive = true, Battery = true }, -- these mark the sender, not the aim point
 }
 
 return Config

@@ -165,6 +165,27 @@ local function onState(message: any)
 		end
 	elseif kind == "alert" then
 		Hud.toast(message.text, Color3.fromRGB(255, 220, 120))
+	elseif kind == "scan" and type(message.targets) == "table" then
+		-- Upload finale: the network scan outlines every merc in the Core for a moment.
+		local seconds = tonumber(message.seconds) or 2
+		local found = 0
+		for _, name in message.targets do
+			local model = type(name) == "string" and workspace:FindFirstChild(name)
+			if model and model:IsA("Model") then
+				found += 1
+				local highlight = Instance.new("Highlight")
+				highlight.Name = "NetworkScan"
+				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				highlight.FillColor = Color3.fromRGB(205, 80, 255)
+				highlight.FillTransparency = 0.6
+				highlight.OutlineColor = Color3.fromRGB(235, 200, 255)
+				highlight.Parent = model
+				task.delay(seconds, function()
+					highlight:Destroy()
+				end)
+			end
+		end
+		Hud.toast(if found > 0 then `Network scan: {found} merc{if found == 1 then "" else "s"} in the Core` else "Network scan: the Core is clear", Color3.fromRGB(220, 160, 255))
 	elseif kind == "toast" then
 		Hud.toast(message.text)
 	end

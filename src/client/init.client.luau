@@ -15,9 +15,11 @@ local Effects = require(script.Effects)
 local FacilityView = require(script.FacilityView)
 local Flashlights = require(script.Flashlights)
 local Hud = require(script.Hud)
+local MatchHud = require(script.MatchHud)
 local MercClient = require(script.MercClient)
 local MercCombat = require(script.MercCombat)
 local NameTags = require(script.NameTags)
+local PingClient = require(script.PingClient)
 local ShellControl = require(script.ShellControl)
 local ShellViews = require(script.ShellViews)
 local Spectate = require(script.Spectate)
@@ -39,6 +41,7 @@ clientFolder.Name = "ClientFX"
 clientFolder.Parent = workspace
 
 Hud.init()
+MatchHud.init()
 CuePlayer.init(clientFolder)
 DockViews.init(clientFolder)
 Effects.init(clientFolder)
@@ -49,34 +52,50 @@ Flashlights.init(clientFolder)
 DetectionHud.init()
 MercClient.init()
 MercCombat.init(clientFolder)
+PingClient.init()
 Spectate.init()
 ChimeraClient.init(clientFolder)
 
-local function stopMerc()
+local function stopMercBody()
+	PingClient.stopWheel()
 	MercCombat.stop()
 	MercClient.stop()
 	NameTags.stop()
-	Spectate.stop()
 end
 
+-- Watching the cameras: Overwatch (an eliminated merc) or a spectator. Restart so the mode is right.
+local function watchCameras()
+	Spectate.stop()
+	Spectate.start()
+end
+
+-- Role: Lobby (MatchHud circles the Core), Chimera, Merc (eliminated: Overwatch) or Spectator.
 local function applyRole()
 	local role = player:GetAttribute("Role")
 	if role == "Chimera" then
-		stopMerc()
+		stopMercBody()
+		Spectate.stop()
 		ChimeraClient.start()
 	elseif role == "Merc" then
 		ChimeraClient.stop()
 		if player:GetAttribute("Eliminated") then
-			MercCombat.stop()
-			MercClient.stop()
-			NameTags.stop()
-			Spectate.start()
+			stopMercBody()
+			watchCameras()
 		else
 			Spectate.stop()
 			MercClient.start()
 			MercCombat.start()
 			NameTags.start()
+			PingClient.startWheel()
 		end
+	elseif role == "Spectator" then
+		ChimeraClient.stop()
+		stopMercBody()
+		watchCameras()
+	else
+		ChimeraClient.stop()
+		stopMercBody()
+		Spectate.stop()
 	end
 end
 player:GetAttributeChangedSignal("Role"):Connect(applyRole)
@@ -87,8 +106,11 @@ if RunService:IsStudio() then
 	DebugPanel.init(function()
 		return {
 			role = player:GetAttribute("Role"),
+			team = player:GetAttribute("Team"),
 			class = player:GetAttribute("Class"),
 			eliminated = player:GetAttribute("Eliminated"),
+			match = MatchHud.describe(),
+			pings = PingClient.describe(),
 			chimera = ChimeraClient.describe(),
 			merc = MercClient.describe(),
 			combat = MercCombat.describe(),
@@ -130,6 +152,14 @@ if RunService:IsStudio() then
 		tracker = function(held: boolean)
 			DetectionHud.setHeld(held)
 			return DetectionHud.describe()
+		end,
+		ping = function(kind: string)
+			PingClient.testPing(kind)
+			return PingClient.describe()
+		end,
+		watch = function(cameraId: string)
+			Spectate.testCamera(cameraId)
+			return Spectate.describe()
 		end,
 	})
 end

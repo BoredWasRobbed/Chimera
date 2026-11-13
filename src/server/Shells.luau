@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Net = require(ReplicatedStorage.Shared.Net)
 local ShellMotor = require(ReplicatedStorage.Shared.ShellMotor)
+local MatchState = require(script.Parent.MatchState)
 
 export type Visibility = "Cloaked" | "Exposed" | "Revealed"
 
@@ -33,6 +34,7 @@ export type Shell = {
 	maxHp: number,
 	dead: boolean,
 	revealedUntil: number,
+	taggedUntil: number, -- an Overwatch Tag outlines the shell for living mercs until then
 	staggerUntil: number,
 	slowScale: number,
 	slowUntil: number,
@@ -95,6 +97,8 @@ function Shells.spawn(owner: any, player: Player?, feet: CFrame, dockId: string?
 	nextNonce += 1
 	local look = feet.LookVector
 	local yaw = math.atan2(-look.X, -look.Z)
+	-- Phase Weave's 1,000 HP, 10% less for each merc short of five.
+	local hp = math.round(Config.Modules.PhaseWeave.HP * MatchState.shellHpScale())
 	local shell: Shell = {
 		id = `S{nextNonce}`,
 		nonce = nextNonce,
@@ -110,10 +114,11 @@ function Shells.spawn(owner: any, player: Player?, feet: CFrame, dockId: string?
 		lastInputAt = os.clock(),
 		debt = 0,
 		dockId = dockId,
-		hp = Config.Modules.PhaseWeave.HP,
-		maxHp = Config.Modules.PhaseWeave.HP,
+		hp = hp,
+		maxHp = hp,
 		dead = false,
 		revealedUntil = 0,
+		taggedUntil = 0,
 		staggerUntil = 0,
 		slowScale = 1,
 		slowUntil = 0,

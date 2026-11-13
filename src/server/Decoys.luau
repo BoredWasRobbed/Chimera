@@ -165,6 +165,15 @@ function Decoys.folder(): Folder
 	return folder
 end
 
+-- A new round: no decoys left walking.
+function Decoys.clear()
+	for model in active do
+		model:Destroy()
+	end
+	table.clear(active)
+	folder:ClearAllChildren()
+end
+
 function Decoys.init()
 	combat = Net.get("Combat")
 	floorParams.FilterDescendantsInstances = { workspace:WaitForChild("Map") }

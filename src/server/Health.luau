@@ -33,6 +33,7 @@ local Health = {}
 local bodies: { [Model]: Body } = {}
 local downCounts: { [string]: number } = {}
 local onEliminated: (Body, string) -> () = function() end
+local damageListeners: { (Body) -> () } = {}
 
 local function serverTime(clockTime: number): number
 	return workspace:GetServerTimeNow() + (clockTime - os.clock())
@@ -202,6 +203,9 @@ function Health.damage(model: Model, amount: number, opts: { canDown: boolean, b
 	if not body or body.eliminated or body.downed or amount <= 0 then
 		return nil
 	end
+	for _, listener in damageListeners do
+		task.spawn(listener, body)
+	end
 	local hp = body.hp - amount
 	if opts.canDown then
 		if hp <= 0 then
@@ -214,6 +218,11 @@ function Health.damage(model: Model, amount: number, opts: { canDown: boolean, b
 	body.hp = hp
 	publish(body)
 	return "hit"
+end
+
+-- listener(body) runs whenever a body takes damage (Terminals: damage interrupts a reboot).
+function Health.onDamaged(listener: (Body) -> ())
+	table.insert(damageListeners, listener)
 end
 
 function Health.heal(model: Model, amount: number)
@@ -241,7 +250,8 @@ end
 
 -- reason: "assimilated" or "bledOut".
 function Health.eliminate(body: Body, reason: string, by: any?)
-	if body.eliminated then
+	-- A body that's gone (its merc left the server) scores nothing.
+	if body.eliminated or bodies[body.model] ~= body then
 		return
 	end
 	body.eliminated = true
@@ -287,9 +297,19 @@ function Health.tick(dt: number)
 	end
 end
 
--- Studio tests: a fresh match for bleed-out timers.
+-- A fresh match: bleed-out timers start over.
 function Health.resetDownCounts()
 	table.clear(downCounts)
+end
+
+-- Between rounds: remove bodies that belong to no player (Studio dummies).
+function Health.clearDummies()
+	for model, body in bodies do
+		if not body.player then
+			bodies[model] = nil
+			model:Destroy()
+		end
+	end
 end
 
 function Health.init(eliminated: (Body, string) -> ())

@@ -156,7 +156,8 @@ end
 function Weapons.fire(player: Player, origin: any, direction: any, renderTime: any)
 	local l = loadouts[player]
 	local body = Health.ofPlayer(player)
-	if not l or not body or body.downed then
+	-- Downed mercs can't shoot, and neither can a merc rebooting a terminal.
+	if not l or not body or body.downed or body.model:GetAttribute("Operating") then
 		return
 	end
 	if not Hitbox.finiteVector(origin) or not Hitbox.finiteVector(direction) or direction.Magnitude < 0.5 then

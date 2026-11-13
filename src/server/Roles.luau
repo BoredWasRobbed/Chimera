@@ -1,8 +1,10 @@
--- Who plays what. Until match flow arrives (milestone 3) the first player in the server is the Chimera
--- and everyone else is a merc. The Chimera has no character: it lives in the cameras. Mercs get the
--- first slice class with room under its cap (Assault 2, Technician 2, Medic 1, Scout 1). An eliminated
--- merc (assimilated or bled out) loses their body and watches through the cameras; full Overwatch is
--- milestone 3.
+-- Who plays what. Match decides; this module applies it. A player's Role attribute is one of:
+--   Lobby      between rounds, or picked for the next one (the Team attribute says which side)
+--   Chimera    no character: it lives in the cameras
+--   Merc       a body with a class loadout (Assault 2, Technician 2, Medic 1, Scout 1)
+--   Spectator  joined mid-match or was sent to the lobby for idling: watches the cameras until the next round
+-- An eliminated merc (assimilated or bled out) keeps the Merc role with Eliminated set: their body is
+-- removed and they play Overwatch through the cameras.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -14,7 +16,10 @@ local Gear = require(script.Parent.Gear)
 local Health = require(script.Parent.Health)
 local MercMovement = require(script.Parent.MercMovement)
 local Perception = require(script.Parent.Perception)
+local Terminals = require(script.Parent.Terminals)
 local Weapons = require(script.Parent.Weapons)
+
+export type Role = "Lobby" | "Chimera" | "Merc" | "Spectator"
 
 local Roles = {}
 
@@ -24,14 +29,22 @@ function Roles.chimera(): Player?
 	return chimeraPlayer
 end
 
-local function pickClass(player: Player): string
+-- How many mercs (playing, or picked as mercs for the next round) have each class.
+function Roles.classCounts(exclude: Player?): { [string]: number }
 	local counts = {}
 	for _, other in Players:GetPlayers() do
-		local class = other ~= player and other:GetAttribute("Role") == "Merc" and other:GetAttribute("Class")
+		local isMerc = other:GetAttribute("Role") == "Merc" or other:GetAttribute("Team") == "Merc"
+		local class = other ~= exclude and isMerc and other:GetAttribute("Class")
 		if class then
 			counts[class] = (counts[class] or 0) + 1
 		end
 	end
+	return counts
+end
+
+-- The first slice class with room under its cap.
+function Roles.pickClass(player: Player): string
+	local counts = Roles.classCounts(player)
 	for _, class in Config.Classes.Order do
 		if (counts[class] or 0) < Config.Classes[class].Cap then
 			return class
@@ -63,6 +76,7 @@ local function setupCharacter(player: Player, character: Model)
 end
 
 local function clearMerc(player: Player)
+	Terminals.release(player)
 	MercMovement.removeMerc(player)
 	Flashlights.removeMerc(player)
 	Weapons.remove(player)
@@ -70,39 +84,63 @@ local function clearMerc(player: Player)
 	Detection.forget(player)
 end
 
-function Roles.setRole(player: Player, role: "Chimera" | "Merc")
+-- Undo whatever the player's current role set up. Their body goes without scoring anything.
+local function clearRole(player: Player)
 	local current = player:GetAttribute("Role")
-	if current == role then
-		return
-	end
 	if current == "Chimera" then
 		Chimera.removePlayer(player)
-		if chimeraPlayer == player then
-			chimeraPlayer = nil
-		end
 	elseif current == "Merc" then
 		clearMerc(player)
 	end
+	if chimeraPlayer == player then
+		chimeraPlayer = nil
+	end
 	Perception.remove(player)
 	player:SetAttribute("Eliminated", nil)
+	if player.Character then
+		player.Character:Destroy()
+		player.Character = nil
+	end
+end
 
+-- Set the role without bringing anyone into the facility yet.
+function Roles.assign(player: Player, role: Role, class: string?)
+	clearRole(player)
 	player:SetAttribute("Role", role)
 	if role == "Chimera" then
 		chimeraPlayer = player
 		player:SetAttribute("Class", nil)
-		if player.Character then
-			player.Character:Destroy()
-			player.Character = nil
-		end
+	elseif role == "Merc" then
+		player:SetAttribute("Class", if class and Config.Classes[class] then class else Roles.pickClass(player))
+	else
+		player:SetAttribute("Class", nil)
+	end
+	if role == "Spectator" then
+		-- Spectators watch the cameras: perception treats them like Overwatch.
+		Perception.addMerc(player)
+	end
+end
+
+-- Bring an assigned player into the facility: the Chimera boots in the network, a merc gets a body at
+-- the Insertion lift.
+function Roles.deploy(player: Player)
+	local role = player:GetAttribute("Role")
+	if role == "Chimera" then
 		Perception.addChimera(player)
 		Chimera.addPlayer(player)
-	else
-		player:SetAttribute("Class", pickClass(player))
+	elseif role == "Merc" then
 		MercMovement.addMerc(player)
 		Flashlights.addMerc(player)
 		Perception.addMerc(player)
-		player:LoadCharacter()
+		task.spawn(function()
+			player:LoadCharacter()
+		end)
 	end
+end
+
+function Roles.setRole(player: Player, role: Role, class: string?)
+	Roles.assign(player, role, class)
+	Roles.deploy(player)
 end
 
 -- Studio: switch a merc's class and give them a fresh body with its loadout.
@@ -133,6 +171,7 @@ function Roles.eliminated(body: Health.Body, _reason: string)
 		end)
 		return
 	end
+	Terminals.release(player)
 	player:SetAttribute("Eliminated", true)
 	task.delay(1.5, function()
 		if player.Character == body.model then
@@ -142,36 +181,38 @@ function Roles.eliminated(body: Health.Body, _reason: string)
 	end)
 end
 
--- An eliminated merc picks the camera they watch; perception follows that camera.
+-- An eliminated merc (Overwatch) or a spectator picks the camera they watch; perception follows it.
 function Roles.spectate(player: Player, cameraId: any)
-	if player:GetAttribute("Eliminated") and type(cameraId) == "string" then
+	if type(cameraId) ~= "string" then
+		return
+	end
+	local role = player:GetAttribute("Role")
+	if (role == "Merc" and player:GetAttribute("Eliminated")) or role == "Spectator" then
 		Perception.setOverwatch(player, cameraId)
 	end
 end
 
-local function onPlayerAdded(player: Player)
-	player.CharacterAdded:Connect(function(character)
-		setupCharacter(player, character)
-	end)
-	Roles.setRole(player, if chimeraPlayer == nil then "Chimera" else "Merc")
-end
-
 function Roles.init()
 	Players.CharacterAutoLoads = false
-	Players.PlayerAdded:Connect(onPlayerAdded)
+	local function hook(player: Player)
+		player.CharacterAdded:Connect(function(character)
+			setupCharacter(player, character)
+		end)
+	end
+	Players.PlayerAdded:Connect(hook)
+	for _, player in Players:GetPlayers() do
+		hook(player)
+	end
 	Players.PlayerRemoving:Connect(function(player)
 		if player:GetAttribute("Role") == "Chimera" then
 			Chimera.removePlayer(player)
-			if chimeraPlayer == player then
-				chimeraPlayer = nil
-			end
+		end
+		if chimeraPlayer == player then
+			chimeraPlayer = nil
 		end
 		clearMerc(player)
 		Perception.remove(player)
 	end)
-	for _, player in Players:GetPlayers() do
-		task.spawn(onPlayerAdded, player)
-	end
 end
 
 return Roles

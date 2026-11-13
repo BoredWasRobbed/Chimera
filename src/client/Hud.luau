@@ -28,7 +28,7 @@ function Hud.init()
 	toastFrame.Name = "Toasts"
 	toastFrame.BackgroundTransparency = 1
 	toastFrame.AnchorPoint = Vector2.new(0.5, 0)
-	toastFrame.Position = UDim2.new(0.5, 0, 0, 70)
+	toastFrame.Position = UDim2.new(0.5, 0, 0, 142) -- under the match bar, the merc's HP and the banner
 	toastFrame.Size = UDim2.fromOffset(520, 200)
 	toastFrame.ZIndex = 50
 	toastFrame.Parent = gui

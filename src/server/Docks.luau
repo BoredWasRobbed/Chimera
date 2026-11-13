@@ -1,12 +1,13 @@
 -- Shell docks: each holds one dormant shell. A dock is "stocked", "booting" (the Chimera is mid-take:
--- the shell's eyes light red) or "empty" until it reprints 45 s after its shell left.
+-- the shell's eyes light red) or "empty" until it reprints 45 s after its shell left. A rebooted terminal
+-- shuts its wing's docks down for the rest of the match, and Lockdown shuts down every dock: "offline".
 -- Mercs don't get these states directly; Perception passes each change on to mercs who can see the dock.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local MapData = require(script.Parent.MapData)
 
-export type DockState = "stocked" | "booting" | "empty"
+export type DockState = "stocked" | "booting" | "empty" | "offline"
 
 local Docks = {}
 
@@ -79,6 +80,37 @@ function Docks.take(id: string): boolean
 		end
 	end)
 	return true
+end
+
+-- Shut a dock down for the rest of the match: no shell to take, no reprint.
+function Docks.shutDown(id: string)
+	if not states[id] or states[id] == "offline" then
+		return
+	end
+	reprintAt[id] = nil
+	dormantHp[id] = nil
+	set(id, "offline")
+end
+
+-- Every dock in one of these rooms.
+function Docks.inRooms(rooms: { [string]: boolean }): { string }
+	local out = {}
+	for id, dock in MapData.docks do
+		if rooms[dock.room] then
+			table.insert(out, id)
+		end
+	end
+	table.sort(out)
+	return out
+end
+
+-- A new round: every dock stocked and online.
+function Docks.reset()
+	table.clear(reprintAt)
+	table.clear(dormantHp)
+	for id in MapData.docks do
+		set(id, "stocked")
+	end
 end
 
 -- listener(id, destroyed) runs whenever a dormant shell is hit, so the Chimera gets its alert.

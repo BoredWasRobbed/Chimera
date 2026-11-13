@@ -77,6 +77,16 @@ function Gear.remove(player: Player)
 	readyAt[player] = nil
 end
 
+-- A new round: no grenades in the air, no mines, darts or Nano-Regen stations left behind.
+function Gear.clear()
+	for _, list in { grenades, mines, darts, stations } do
+		for _, item in list do
+			item.part:Destroy()
+		end
+		table.clear(list)
+	end
+end
+
 local function explode(grenade: Grenade, at: Vector3)
 	grenade.part:Destroy()
 	local frag = G.FragGrenade
@@ -139,7 +149,7 @@ end
 -- origin: the merc's head. aim: where they're looking.
 function Gear.use(player: Player, origin: any, aim: any)
 	local body = Health.ofPlayer(player)
-	if not body or body.downed or not Hitbox.finiteVector(origin) or not Hitbox.finiteVector(aim) or aim.Magnitude < 0.5 then
+	if not body or body.downed or body.model:GetAttribute("Operating") or not Hitbox.finiteVector(origin) or not Hitbox.finiteVector(aim) or aim.Magnitude < 0.5 then
 		return
 	end
 	local head = body.model:FindFirstChild("Head") :: BasePart?

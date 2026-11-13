@@ -1,4 +1,4 @@
--- Match events, for the upload meter (milestone 3) and anything else that scores a match:
+-- Match events, for the upload meter (Upload) and anything else that scores a match:
 --   MercDowned      { victim, by }        the Chimera downed a merc (+10% upload)
 --   MercAssimilated { victim, by }        the Chimera finished a downed merc (+15%)
 --   MercBledOut     { victim }            a downed merc bled out (+5%)

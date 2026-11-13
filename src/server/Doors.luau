@@ -194,6 +194,23 @@ local function canWeld(player: Player, id: string): boolean
 	return (body.root.Position - door.closed.Position).Magnitude <= 12
 end
 
+-- A new round: every door open, unlocked and unwelded.
+function Doors.reset()
+	for id, door in MapData.doors do
+		locks[id] = nil
+		local weld = welds[id]
+		if weld then
+			weld.seam:Destroy()
+			welds[id] = nil
+		end
+		door.model:SetAttribute("Welded", nil)
+		door.panel.CFrame = door.open
+		setLockLights(door, false)
+		table.clear(weldHolds[id] or {})
+		refreshPrompts(id)
+	end
+end
+
 -- getShellFeet lists where every active shell stands, so a door never slams shut on one.
 function Doors.init(getShellFeet: () -> { Vector3 })
 	shellFeet = getShellFeet
