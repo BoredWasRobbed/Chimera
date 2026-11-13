@@ -16,6 +16,7 @@
 --     Lens                 its LookVector is the camera's resting direction
 --     RecLight             lit red while the Chimera watches through this camera
 --   Lights/<RoomId>        Folder: TargetKind="Blackout", TargetId=<RoomId>; light fixtures and a Panel part
+--                          (a fixture is a part, or a map-kit Model whose glowing part is named Fixture)
 --   Rooms/<RoomId>         invisible box part covering the room, attributes DisplayName and Wing
 --                          ("CORE", "INSERTION", or a wing such as "SF"; a terminal's wing is its room's)
 --   Stations/<Id>          Model: a flashlight charging station; its Pad part is where mercs stand
@@ -201,6 +202,13 @@ function FacilityMap.rooms(): { [string]: RoomInfo }
 							panel = part
 						else
 							table.insert(fixtures, part)
+						end
+					elseif part:IsA("Model") then
+						-- A map-kit light: only its part named Fixture glows; the housing stays as it is.
+						for _, d in part:GetDescendants() do
+							if d:IsA("BasePart") and d.Name == "Fixture" then
+								table.insert(fixtures, d)
+							end
 						end
 					end
 				end

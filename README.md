@@ -100,3 +100,29 @@ Calls made where the design doc gives no number or rule, all in `Config.luau` or
 The map is built in Studio, and the code finds everything by folder and attribute: see the header of `src/shared/FacilityMap.luau`. The server checks the layout rules at startup and warns in the Output about one-way camera links, rooms without a camera and docks no camera can see.
 
 `tools/graybox/BuildGraybox.luau` generated the current graybox. Running it again replaces `Workspace.Map` and `Workspace.Facility`, so hand edits are lost: `require(game.ServerStorage.DevTools.BuildGraybox:Clone())()` from the command bar in Edit mode (the clone skips the module cache).
+
+### The map kit
+
+`ServerStorage.MapKit` holds 65 dark-metal pieces for dressing the facility, built by `tools/mapkit/BuildMapKit.luau` (it syncs to `ServerStorage.DevTools.BuildMapKit`). Nothing is placed in the world: drag pieces out of the Explorer.
+
+| Folder | Pieces |
+| --- | --- |
+| Walls | 8x16 and 8x12 wall panels (plate, ribbed, vent, pipes, screen, hazard), 4-wide fillers, 8x8 upper panels to stack for taller rooms, a cap, 16 and 12 pillars |
+| Floors | diamond plate and grate tiles (8x8), a hazard stripe (8x1) |
+| Ceilings | ceiling panel (8x8), I-beam, duct, cable tray |
+| Doorways | frames for the graybox openings: 8x10, 12x10, 24x12, 24x14 |
+| Lights | ceiling strip, caged wall lamp, pendant |
+| Office | desk, a dressed workstation, monitors (log, camera feed, graph, alert, off), keyboard, mouse, laptop, mug, paper tray, PC tower, chair, control console, wall monitors, filing cabinet, locker, storage shelf |
+| ServerRoom | two server racks, a cooling unit, a floor cable bundle |
+| Industrial | pipe runs (horizontal and vertical), junction box, crate, crate stack, barrel, railing |
+| Signs | sector, direction, warning and restricted signs (edit the TextLabel) |
+
+How the pieces fit:
+- Everything sits on a 4-stud grid and most pieces are 8 wide, matching the graybox walls and openings.
+- A piece's pivot is where it mounts and its front faces -Z (the `Mount` attribute): wall pieces pivot at the bottom of their back on the wall's face, floor pieces at the bottom centre, desk pieces on a desk top (desks are 2.8 high), ceiling pieces at the top centre, and doorway frames at the bottom of the opening on the wall's centre line.
+- The `PlaceIn` attribute says which folder of the map contract a piece goes in. Lights go in `Facility/Lights/<RoomId>`; their glowing part is named `Fixture`, so Blackout turns them off and mercs can shoot them out.
+- Only the big parts collide, so nothing snags a merc or a shell sliding along a wall. Everything still blocks sight and shots.
+- Screens are SurfaceGuis that ignore lighting, so they stay lit in a Blackout. Rack LEDs and status lights do too, but they cast no light.
+- `Model:ScaleTo` resizes a piece cleanly.
+
+Running `require(game.ServerStorage.DevTools.BuildMapKit:Clone())()` rebuilds the kit and replaces `ServerStorage.MapKit`. `require(game.ServerStorage.DevTools.BuildMapKit:Clone()).gallery()` lays every piece out in `Workspace.MapKitGallery`, far from the map; delete it before saving the place. If a gallery shot from the MCP looks unlit, move the Studio camera there first and wait a few seconds for the lighting to catch up.

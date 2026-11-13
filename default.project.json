@@ -20,6 +20,9 @@
         "$className": "Folder",
         "BuildGraybox": {
           "$path": "tools/graybox/BuildGraybox.luau"
+        },
+        "BuildMapKit": {
+          "$path": "tools/mapkit/BuildMapKit.luau"
         }
       }
     },
