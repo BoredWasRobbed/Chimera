@@ -131,7 +131,7 @@ function Spectate.start()
 	local rows = math.ceil(#order / 2)
 	local list = Hud.frame(gui, { Name = "CameraList", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -16), Size = UDim2.fromOffset(372, 28 + rows * 26), BackgroundTransparency = 0.45, ZIndex = 8 })
 	ui.list = list
-	Hud.text(list, { Text = "CAMERAS", Position = UDim2.fromOffset(8, 4), Size = UDim2.fromOffset(200, 18), TextSize = 13, TextColor3 = Hud.DIM, Font = Enum.Font.GothamBold, ZIndex = 9 })
+	Hud.text(list, { Text = "CAMERAS", Position = UDim2.fromOffset(8, 4), Size = UDim2.fromOffset(200, 18), TextSize = 13, TextColor3 = Hud.DIM, FontFace = Hud.FONT_BOLD, ZIndex = 9 })
 	for i, id in order do
 		local column = if i <= rows then 0 else 1
 		local row = if i <= rows then i - 1 else i - rows - 1

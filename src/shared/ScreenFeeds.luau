@@ -1,7 +1,7 @@
 -- Live screens for the map kit. Every kit monitor, wall display and console screen draws one feed from the
 -- match's real state: src/client/FacilityScreens gathers that state and calls update here, and the kit
 -- generator (tools/mapkit) draws the same layouts with sample data so the kit previews look right.
--- No requires: the generator loads a clone of this module from the command bar.
+-- It requires only Fonts beside it, so the generator can load copies of the two from the command bar.
 --
 -- A kit screen is a part tagged "KitScreen" with a SurfaceGui named "Display" and these attributes:
 --   Feed       one of ScreenFeeds.FEEDS
@@ -26,15 +26,8 @@ local ScreenFeeds = {}
 
 ScreenFeeds.HEIGHT = 240 -- every canvas is 240 px tall; its width follows the screen's shape
 
-local ZEKTON = "rbxasset://fonts/families/Zekton.json"
-local ROBOTO_MONO = "rbxasset://fonts/families/RobotoMono.json"
-
--- The kit's fonts: Zekton for headings, signs and big numbers, Roboto Mono for data lines.
-ScreenFeeds.FONTS = {
-	display = Font.new(ZEKTON, Enum.FontWeight.Bold),
-	body = Font.new(ZEKTON, Enum.FontWeight.Regular),
-	mono = Font.new(ROBOTO_MONO, Enum.FontWeight.Medium),
-}
+-- The game's fonts (shared/Fonts): Zekton for headings, signs and big numbers, Roboto Mono for data lines.
+ScreenFeeds.FONTS = require(script.Parent.Fonts)
 local FONT = ScreenFeeds.FONTS
 
 ScreenFeeds.FEEDS = { "Status", "Upload", "Terminals", "Camera", "Room", "Squad", "Log", "Map", "Graph", "Alert", "Terminal", "Off" }

@@ -57,7 +57,7 @@ local function render()
 			seen[model] = true
 			local label = labels[model]
 			if not label then
-				label = Hud.text(Hud.gui(), { Name = "NameTag", AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(220, 34), TextSize = 14, TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Bottom, Font = Enum.Font.GothamMedium })
+				label = Hud.text(Hud.gui(), { Name = "NameTag", AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(220, 34), TextSize = 14, TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Bottom, FontFace = Hud.FONT_BOLD })
 				labels[model] = label
 			end
 			label.Position = UDim2.fromOffset(projected.X, projected.Y)

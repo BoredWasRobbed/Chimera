@@ -345,7 +345,7 @@ local function buildHud()
 		Size = UDim2.fromOffset(300, 10),
 	}, Color3.fromRGB(235, 240, 245))
 	ui.hpBar, ui.setHp = hpBar, setHp
-	ui.hpLabel = Hud.text(hpBar, { Position = UDim2.fromOffset(0, 12), Size = UDim2.new(1, 0, 0, 18), TextSize = 15, TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamMedium })
+	ui.hpLabel = Hud.text(hpBar, { Position = UDim2.fromOffset(0, 12), Size = UDim2.new(1, 0, 0, 18), TextSize = 15, TextXAlignment = Enum.TextXAlignment.Center, FontFace = Hud.FONT_BOLD })
 
 	local panel = Hud.frame(gui, {
 		Name = "Loadout",
@@ -356,7 +356,7 @@ local function buildHud()
 	})
 	ui.panel = panel
 	local function line(y: number, size: number): TextLabel
-		return Hud.text(panel, { Position = UDim2.fromOffset(10, y), Size = UDim2.new(1, -20, 0, size + 4), TextSize = size, Font = Enum.Font.GothamMedium })
+		return Hud.text(panel, { Position = UDim2.fromOffset(10, y), Size = UDim2.new(1, -20, 0, size + 4), TextSize = size, FontFace = Hud.FONT_BOLD })
 	end
 	ui.weaponLabel = line(6, 13)
 	ui.ammoLabel = line(22, 24)
@@ -372,7 +372,7 @@ local function buildHud()
 	ui.hitMarker = Hud.text(gui, { Name = "HitMarker", Text = "✕", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(30, 30), TextSize = 22, TextXAlignment = Enum.TextXAlignment.Center, Visible = false })
 
 	ui.downed = Hud.frame(gui, { Name = "Downed", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(10, 10, 12), BackgroundTransparency = 0.55, Visible = false, ZIndex = 2 })
-	ui.downedLabel = Hud.text(ui.downed, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.35), Size = UDim2.fromOffset(700, 60), TextSize = 22, TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamMedium, ZIndex = 3 })
+	ui.downedLabel = Hud.text(ui.downed, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.35), Size = UDim2.fromOffset(700, 60), TextSize = 22, TextXAlignment = Enum.TextXAlignment.Center, FontFace = Hud.FONT_BOLD, ZIndex = 3 })
 	ui.blind = Hud.frame(gui, { Name = "Blind", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(240, 243, 246), BackgroundTransparency = 1, Visible = false, ZIndex = 20 })
 
 	ui.hints = Hud.hints({

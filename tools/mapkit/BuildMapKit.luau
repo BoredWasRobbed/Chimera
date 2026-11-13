@@ -32,16 +32,28 @@
 -- Only the big parts of a piece collide (backings, desk tops, cabinets), so nothing snags a merc or a shell.
 -- Everything still blocks sight and shots. Fonts: Zekton for signs and headings, Roboto Mono for data.
 -- Pieces scale cleanly with Model:ScaleTo.
+--
+-- Textures: PS1-style pixel art from tools/mapkit/textures (make_textures.py), uploaded as image assets. A
+-- build makes each one a MaterialVariant in MaterialService (AxiomSteel, AxiomTread, AxiomWorn, AxiomRubber,
+-- AxiomCardboard, AxiomLeather, AxiomHazard), and kit parts use the one for their material. The textures
+-- are grey, so part colours still set the tone; a part shows its plain colour if its texture can't load.
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local CollectionService = game:GetService("CollectionService")
+local MaterialService = game:GetService("MaterialService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 
+-- Copies of ScreenFeeds and the Fonts it requires, so edits since the last run show up (no module cache).
 local function loadFeeds(): any
 	local shared = ReplicatedStorage:FindFirstChild("Shared")
-	local module = shared and shared:FindFirstChild("ScreenFeeds")
-	assert(module and module:IsA("ModuleScript"), "ReplicatedStorage.Shared.ScreenFeeds is missing: connect Rojo first")
-	return require(module:Clone()) :: any
+	local feeds = shared and shared:FindFirstChild("ScreenFeeds")
+	local fonts = shared and shared:FindFirstChild("Fonts")
+	assert(feeds and fonts, "ReplicatedStorage.Shared.ScreenFeeds or Fonts is missing: connect Rojo first")
+	local folder = Instance.new("Folder")
+	fonts:Clone().Parent = folder
+	local copy = feeds:Clone()
+	copy.Parent = folder
+	return require(copy) :: any
 end
 local Feeds = loadFeeds()
 local FONT = Feeds.FONTS
@@ -54,7 +66,7 @@ local COL = {
 	dark = Color3.fromRGB(25, 27, 31), -- backings, frames, recesses
 	black = Color3.fromRGB(12, 13, 15), -- voids and grille holes
 	edge = Color3.fromRGB(72, 77, 86), -- trims, bolts, rails that catch the light
-	worn = Color3.fromRGB(36, 34, 33), -- old pipes and drums
+	worn = Color3.fromRGB(62, 58, 54), -- old pipes and drums, under the rust texture
 	hazard = Color3.fromRGB(190, 145, 30),
 	hazardDark = Color3.fromRGB(20, 20, 22),
 	screen = Color3.fromRGB(6, 11, 15),
@@ -78,6 +90,54 @@ local COL = {
 local Z_BACK, Z_PLATE, Z_SHEET, Z_RAIL, Z_KICK, Z_RIB, Z_CORNICE = 0.3, 0.46, 0.52, 0.62, 0.66, 0.84, 0.94
 local RIB_W, CORNICE_H, KICK_H, RAIL_Y0, RAIL_Y1 = 0.6, 0.75, 1.2, 4.1, 4.6
 local DESK_H = 2.8
+
+------------------------------------------------------------------------------------------------------------
+-- Textures (see the header). StudsPerTile sets how big each tile is; every tile is 64 pixels across.
+
+local TEXTURES = {
+	{ name = "AxiomSteel", base = MAT.Metal, id = "rbxassetid://92667941928592", studs = 4 },
+	{ name = "AxiomTread", base = MAT.DiamondPlate, id = "rbxassetid://78642924716134", studs = 4 },
+	{ name = "AxiomWorn", base = MAT.CorrodedMetal, id = "rbxassetid://94243460407873", studs = 4 },
+	{ name = "AxiomRubber", base = MAT.Rubber, id = "rbxassetid://99652311649664", studs = 4 },
+	{ name = "AxiomCardboard", base = MAT.Cardboard, id = "rbxassetid://124707341641719", studs = 3 },
+	{ name = "AxiomLeather", base = MAT.Leather, id = "rbxassetid://73871333309647", studs = 2 },
+	-- SmoothPlastic is used everywhere, so this one only goes on parts hazard() paints.
+	{ name = "AxiomHazard", base = MAT.SmoothPlastic, id = "rbxassetid://127092008150336", studs = 3, only = true },
+}
+
+-- Base material -> the MaterialVariant kit parts of that material use.
+local VARIANTS: { [Enum.Material]: string } = {}
+local HAZARD_VARIANT: string? = nil
+-- Old pipes and drums take the rust texture; without it they stay plain metal.
+local WORN = MAT.Metal
+
+local function ensureMaterials()
+	table.clear(VARIANTS)
+	HAZARD_VARIANT = nil
+	WORN = MAT.Metal
+	for _, t in TEXTURES do
+		if t.id ~= "" then
+			local variant = MaterialService:FindFirstChild(t.name)
+			if not (variant and variant:IsA("MaterialVariant")) then
+				variant = Instance.new("MaterialVariant")
+				variant.Name = t.name
+			end
+			local v = variant :: MaterialVariant
+			v.BaseMaterial = t.base
+			v.ColorMap = t.id
+			v.StudsPerTile = t.studs
+			v.Parent = MaterialService
+			if t.only then
+				HAZARD_VARIANT = t.name
+			else
+				VARIANTS[t.base] = t.name
+			end
+			if t.base == MAT.CorrodedMetal then
+				WORN = MAT.CorrodedMetal
+			end
+		end
+	end
+end
 
 ------------------------------------------------------------------------------------------------------------
 -- Part helpers. A builder places parts relative to an origin, so one piece can reuse another.
@@ -114,6 +174,7 @@ local function newBuilder(parent: Instance, origin: CFrame): Builder
 		p.CFrame = origin * cf
 		p.Color = color
 		p.Material = material or MAT.Metal
+		p.MaterialVariant = VARIANTS[p.Material] or ""
 		p.Anchored = true
 		p.CanCollide = solid == true
 		p.CanTouch = false
@@ -229,6 +290,13 @@ end
 local STRIPES_FINE, STRIPES_WIDE = stripes(4), stripes(2)
 
 local function hazard(p: BasePart, face: Enum.NormalId?)
+	if HAZARD_VARIANT then
+		-- The striped texture covers every face, tinted hazard yellow.
+		p.Material = MAT.SmoothPlastic
+		p.MaterialVariant = HAZARD_VARIANT
+		p.Color = COL.hazard
+		return
+	end
 	local f = face or Enum.NormalId.Front
 	local w, h = faceSize(p.Size, f)
 	local gui = Instance.new("SurfaceGui")
@@ -524,7 +592,7 @@ local function wallPanel(W: number, H: number, variant: string, upperOnly: boole
 			for i, pipe in { { -1.6, 0.7 }, { -0.6, 0.45 } } do
 				local x, d = pipe[1] * W / 8, pipe[2]
 				local z = -(0.75 + d / 2)
-				b.cyl("Pipe", H - 0.05, d, CFrame.new(x, (H - 0.05) / 2, z) * ALONG_Y, COL.worn, MAT.Metal)
+				b.cyl("Pipe", H - 0.05, d, CFrame.new(x, (H - 0.05) / 2, z) * ALONG_Y, COL.worn, WORN)
 				for _, y in { 0.9, H - 1.6 } do
 					b.cyl("Flange", 0.18, d + 0.22, CFrame.new(x, y, z) * ALONG_Y, COL.dark, MAT.Metal)
 				end
@@ -608,7 +676,7 @@ end
 local function floorGrate(b: Builder)
 	b.box("Pit", Vector3.new(7.2, 0.03, 7.2), Vector3.new(0, 0.015, 0), COL.black, MAT.SmoothPlastic, true)
 	for _, z in { -1.7, 1.5 } do
-		b.cyl("Pipe", 7.2, 0.09, CFrame.new(0, 0.075, z), COL.worn, MAT.Metal)
+		b.cyl("Pipe", 7.2, 0.09, CFrame.new(0, 0.075, z), COL.worn, WORN)
 	end
 	b.cyl("Cable", 7.2, 0.07, CFrame.new(0, 0.065, 0.35), Color3.fromRGB(70, 22, 22), MAT.Rubber)
 	for _, z in { -2.6, -0.8, 0.9, 2.6 } do
@@ -735,7 +803,7 @@ local function ceilingPipes(b: Builder)
 	end
 	for _, p in pipes do
 		local y = -1.9 + p.d / 2
-		b.cyl("Pipe", 8, p.d, CFrame.new(0, y, p.z), p.color, MAT.Metal)
+		b.cyl("Pipe", 8, p.d, CFrame.new(0, y, p.z), p.color, if p.color == COL.worn then WORN else MAT.Metal)
 		for _, x in { -3.88, 3.88 } do
 			b.cyl("Flange", 0.2, p.d + 0.24, CFrame.new(x, y, p.z), COL.dark, MAT.Metal)
 		end
@@ -1280,7 +1348,7 @@ local function coolingUnit(b: Builder)
 	b.box("Indicator", Vector3.new(0.25, 0.25, 0.04), Vector3.new(1.4, 6.4, -1.52), COL.amber, MAT.Neon)
 	textGui(b.box("Label", Vector3.new(1.4, 0.35, 0.02), Vector3.new(1.45, 5.9, -1.51), COL.dark, MAT.Metal), "CRAC-2", COL.stencil, { transparency = 0.2, padY = 0.1 })
 	for _, x in { 1.6, 2.4 } do
-		b.cyl("Pipe", 8, 0.5, CFrame.new(x, 12, 0.6) * ALONG_Y, COL.worn, MAT.Metal)
+		b.cyl("Pipe", 8, 0.5, CFrame.new(x, 12, 0.6) * ALONG_Y, COL.worn, WORN)
 		b.cyl("Flange", 0.2, 0.72, CFrame.new(x, 8.3, 0.6) * ALONG_Y, COL.dark, MAT.Metal)
 	end
 end
@@ -1302,7 +1370,7 @@ end
 local function pipeRun(b: Builder)
 	local pipes = { { y = 11, d = 1.0, z = -1.15 }, { y = 12.35, d = 0.6, z = -0.9 }, { y = 9.85, d = 0.5, z = -0.85 } }
 	for i, p in pipes do
-		b.cyl("Pipe", 8, p.d, CFrame.new(0, p.y, p.z), if i == 2 then COL.dark else COL.worn, MAT.Metal)
+		b.cyl("Pipe", 8, p.d, CFrame.new(0, p.y, p.z), if i == 2 then COL.dark else COL.worn, if i == 2 then MAT.Metal else WORN)
 		for _, x in { -3.88, 3.88 } do
 			b.cyl("Flange", 0.2, p.d + 0.3, CFrame.new(x, p.y, p.z), COL.dark, MAT.Metal)
 		end
@@ -1336,7 +1404,7 @@ end
 local function pipeVertical(b: Builder)
 	for i, p in { { x = -0.6, d = 0.9 }, { x = 0.6, d = 0.6 } } do
 		local z = -(0.3 + p.d / 2)
-		b.cyl("Pipe", 15.95, p.d, CFrame.new(p.x, 15.95 / 2, z) * ALONG_Y, if i == 1 then COL.worn else COL.dark, MAT.Metal)
+		b.cyl("Pipe", 15.95, p.d, CFrame.new(p.x, 15.95 / 2, z) * ALONG_Y, if i == 1 then COL.worn else COL.dark, if i == 1 then WORN else MAT.Metal)
 		for _, y in { 0.6, 6, 15.3 } do
 			b.cyl("Flange", 0.2, p.d + 0.3, CFrame.new(p.x, y, z) * ALONG_Y, COL.dark, MAT.Metal)
 		end
@@ -1347,7 +1415,7 @@ local function pipeVertical(b: Builder)
 	for _, y in { 3, 12 } do
 		b.box("Bracket", Vector3.new(2.2, 0.3, 0.26), Vector3.new(0, y, -0.13), COL.edge, MAT.Metal)
 	end
-	b.cyl("Branch", 0.3, 0.5, CFrame.new(-0.6, 9, -0.15) * ALONG_Z, COL.worn, MAT.Metal)
+	b.cyl("Branch", 0.3, 0.5, CFrame.new(-0.6, 9, -0.15) * ALONG_Z, COL.worn, WORN)
 	b.cyl("BranchFlange", 0.12, 0.72, CFrame.new(-0.6, 9, -0.06) * ALONG_Z, COL.dark, MAT.Metal)
 end
 
@@ -1402,7 +1470,7 @@ local function crateStack(b: Builder)
 end
 
 local function barrel(b: Builder)
-	b.cyl("Drum", 3.4, 2.2, CFrame.new(0, 1.7, 0) * ALONG_Y, COL.worn, MAT.Metal, true)
+	b.cyl("Drum", 3.4, 2.2, CFrame.new(0, 1.7, 0) * ALONG_Y, COL.worn, WORN, true)
 	for _, y in { 0.1, 1.15, 2.25, 3.3 } do
 		b.cyl("Rib", 0.15, 2.3, CFrame.new(0, y, 0) * ALONG_Y, COL.dark, MAT.Metal)
 	end
@@ -1774,6 +1842,7 @@ local function buildPiece(entry): Model
 end
 
 local function build(): string
+	ensureMaterials()
 	prepareSample()
 	local recording = ChangeHistoryService:TryBeginRecording("Build map kit")
 	local old = ServerStorage:FindFirstChild("MapKit")
@@ -2192,6 +2261,7 @@ local function gallery(origin: Vector3?): string
 		build()
 		kit = ServerStorage:FindFirstChild("MapKit")
 	end
+	ensureMaterials()
 	local base = origin or Vector3.new(0, 0, 700)
 	local old = workspace:FindFirstChild("MapKitGallery")
 	if old then

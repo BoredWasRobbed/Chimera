@@ -1,6 +1,9 @@
 -- Graybox UI helpers: one ScreenGui shared by every client controller, plus small factories.
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+
+local Fonts = require(ReplicatedStorage.Shared.Fonts)
 
 local Hud = {}
 
@@ -9,7 +12,10 @@ Hud.WHITE = Color3.fromRGB(235, 240, 245)
 Hud.DIM = Color3.fromRGB(150, 160, 170)
 Hud.WARN = Color3.fromRGB(255, 170, 60)
 Hud.PANEL = Color3.fromRGB(12, 16, 20)
-Hud.FONT = Enum.Font.Code
+-- Fonts (shared/Fonts): Roboto Mono for running text, Zekton for headings, labels and buttons.
+Hud.FONT = Fonts.mono
+Hud.FONT_BOLD = Fonts.display
+Hud.FONT_LABEL = Fonts.body
 
 local gui: ScreenGui
 local toastFrame: Frame
@@ -58,7 +64,7 @@ end
 function Hud.text(parent: Instance, props: { [string]: any }): TextLabel
 	local t = Instance.new("TextLabel")
 	t.BackgroundTransparency = 1
-	t.Font = Hud.FONT
+	t.FontFace = Hud.FONT
 	t.TextColor3 = Hud.WHITE
 	t.TextSize = 16
 	t.TextStrokeTransparency = 0.6
@@ -76,7 +82,7 @@ function Hud.button(parent: Instance, props: { [string]: any }): TextButton
 	b.BorderSizePixel = 0
 	b.BackgroundColor3 = Hud.PANEL
 	b.BackgroundTransparency = 0.25
-	b.Font = Hud.FONT
+	b.FontFace = Hud.FONT_BOLD
 	b.TextColor3 = Hud.WHITE
 	b.TextSize = 15
 	for key, value in props do

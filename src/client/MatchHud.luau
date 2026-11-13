@@ -83,11 +83,11 @@ local function buildTopBar(gui: ScreenGui)
 		BackgroundTransparency = 0.45,
 	})
 	ui.bar = bar
-	ui.phase = Hud.text(bar, { Position = UDim2.fromOffset(10, 3), Size = UDim2.fromOffset(380, 20), TextSize = 16, Font = Enum.Font.GothamBold })
-	ui.threat = Hud.text(bar, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 3), Size = UDim2.fromOffset(150, 20), TextSize = 15, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Right })
+	ui.phase = Hud.text(bar, { Position = UDim2.fromOffset(10, 3), Size = UDim2.fromOffset(380, 20), TextSize = 16, FontFace = Hud.FONT_BOLD })
+	ui.threat = Hud.text(bar, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 3), Size = UDim2.fromOffset(150, 20), TextSize = 15, FontFace = Hud.FONT_BOLD, TextXAlignment = Enum.TextXAlignment.Right })
 	local upload, setUpload = Hud.bar(bar, { Position = UDim2.fromOffset(10, 25), Size = UDim2.new(1, -20, 0, 14), BackgroundTransparency = 0.2, BackgroundColor3 = Color3.fromRGB(30, 20, 40) }, UPLOAD_COLOR)
 	ui.setUpload = setUpload
-	ui.uploadLabel = Hud.text(upload, { Size = UDim2.fromScale(1, 1), TextSize = 12, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 3 })
+	ui.uploadLabel = Hud.text(upload, { Size = UDim2.fromScale(1, 1), TextSize = 12, FontFace = Hud.FONT_BOLD, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 3 })
 
 	local row = Hud.frame(bar, { Name = "Terminals", Position = UDim2.fromOffset(10, 43), Size = UDim2.new(1, -20, 0, 15), BackgroundTransparency = 1 })
 	ui.terminalRow = row
@@ -105,7 +105,7 @@ local function buildTopBar(gui: ScreenGui)
 	for index, model in models do
 		local cell = Hud.frame(row, { Position = UDim2.new(width * (index - 1), 2, 0, 0), Size = UDim2.new(width, -4, 1, 0), BackgroundTransparency = 0.2, BackgroundColor3 = Color3.fromRGB(16, 22, 28) })
 		local fill = Hud.frame(cell, { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = MERC_COLOR, BackgroundTransparency = 0.35 })
-		local label = Hud.text(cell, { Size = UDim2.fromScale(1, 1), TextSize = 11, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 3 })
+		local label = Hud.text(cell, { Size = UDim2.fromScale(1, 1), TextSize = 11, FontFace = Hud.FONT_BOLD, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 3 })
 		table.insert(cells, {
 			model = model,
 			label = label,
@@ -119,7 +119,7 @@ local function buildTopBar(gui: ScreenGui)
 	local finale = Hud.frame(bar, { Name = "Finale", Position = UDim2.fromOffset(10, 43), Size = UDim2.new(1, -20, 0, 15), BackgroundTransparency = 0.2, BackgroundColor3 = Color3.fromRGB(16, 22, 28), Visible = false })
 	ui.finaleRow = finale
 	ui.finaleFill = Hud.frame(finale, { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = MERC_COLOR, BackgroundTransparency = 0.2 })
-	ui.finaleLabel = Hud.text(finale, { Size = UDim2.fromScale(1, 1), TextSize = 11, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 3 })
+	ui.finaleLabel = Hud.text(finale, { Size = UDim2.fromScale(1, 1), TextSize = 11, FontFace = Hud.FONT_BOLD, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 3 })
 end
 
 local function centerPanel(gui: ScreenGui, name: string, height: number): Frame
@@ -137,9 +137,9 @@ end
 local function buildLobby(gui: ScreenGui)
 	local panel = centerPanel(gui, "Lobby", 340)
 	ui.lobby = panel
-	Hud.text(panel, { Text = "LOBBY", Position = UDim2.fromOffset(16, 10), Size = UDim2.fromOffset(300, 26), TextSize = 22, Font = Enum.Font.GothamBold, ZIndex = 11 })
+	Hud.text(panel, { Text = "LOBBY", Position = UDim2.fromOffset(16, 10), Size = UDim2.fromOffset(300, 26), TextSize = 22, FontFace = Hud.FONT_BOLD, ZIndex = 11 })
 	ui.lobbyStatus = Hud.text(panel, { Position = UDim2.fromOffset(16, 40), Size = UDim2.new(1, -32, 0, 20), TextSize = 16, TextColor3 = Hud.CYAN, ZIndex = 11 })
-	Hud.text(panel, { Text = "CHIMERA CHANCE", Position = UDim2.fromOffset(16, 70), Size = UDim2.fromOffset(300, 18), TextSize = 13, TextColor3 = Hud.DIM, Font = Enum.Font.GothamBold, ZIndex = 11 })
+	Hud.text(panel, { Text = "CHIMERA CHANCE", Position = UDim2.fromOffset(16, 70), Size = UDim2.fromOffset(300, 18), TextSize = 13, TextColor3 = Hud.DIM, FontFace = Hud.FONT_BOLD, ZIndex = 11 })
 	ui.lobbyList = Hud.text(panel, { Position = UDim2.fromOffset(16, 92), Size = UDim2.new(1, -32, 0, 180), TextSize = 15, TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 11 })
 	local toggle = Hud.button(panel, { Name = "MercOnly", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -14), Size = UDim2.fromOffset(220, 30), TextSize = 15, ZIndex = 11 })
 	ui.mercOnly = toggle
@@ -152,7 +152,7 @@ end
 local function buildLoadout(gui: ScreenGui)
 	local panel = centerPanel(gui, "Loadout", 310)
 	ui.loadout = panel
-	ui.loadoutTitle = Hud.text(panel, { Position = UDim2.fromOffset(16, 10), Size = UDim2.new(1, -32, 0, 26), TextSize = 22, Font = Enum.Font.GothamBold, ZIndex = 11 })
+	ui.loadoutTitle = Hud.text(panel, { Position = UDim2.fromOffset(16, 10), Size = UDim2.new(1, -32, 0, 26), TextSize = 22, FontFace = Hud.FONT_BOLD, ZIndex = 11 })
 	ui.loadoutStatus = Hud.text(panel, { Position = UDim2.fromOffset(16, 40), Size = UDim2.new(1, -32, 0, 52), TextSize = 15, TextColor3 = Hud.CYAN, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 11 })
 	ui.build = Hud.text(panel, { Text = CHIMERA_BUILD, Position = UDim2.fromOffset(16, 100), Size = UDim2.new(1, -32, 0, 120), TextSize = 15, TextYAlignment = Enum.TextYAlignment.Top, LineHeight = 1.3, Visible = false, ZIndex = 11 })
 	local cards = Hud.frame(panel, { Name = "Cards", Position = UDim2.fromOffset(16, 100), Size = UDim2.new(1, -32, 0, 190), BackgroundTransparency = 1, ZIndex = 11 })
@@ -176,10 +176,10 @@ local function buildLoadout(gui: ScreenGui)
 		stroke.Enabled = false
 		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		stroke.Parent = button
-		Hud.text(button, { Text = string.upper(class), Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 0, 20), TextSize = 15, Font = Enum.Font.GothamBold, ZIndex = 13 })
+		Hud.text(button, { Text = string.upper(class), Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 0, 20), TextSize = 15, FontFace = Hud.FONT_BOLD, ZIndex = 13 })
 		local lines = `{Config.Weapons[info.Weapon].Name}\n{Config.Gear[info.Gear].Name} ×{info.GearCount}\n\n{PASSIVES[class] or ""}`
 		Hud.text(button, { Text = lines, Position = UDim2.fromOffset(8, 34), Size = UDim2.new(1, -16, 0, 110), TextSize = 12, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = Hud.DIM, ZIndex = 13 })
-		local count = Hud.text(button, { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, -8), Size = UDim2.new(1, -16, 0, 18), TextSize = 13, Font = Enum.Font.GothamBold, ZIndex = 13 })
+		local count = Hud.text(button, { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, -8), Size = UDim2.new(1, -16, 0, 18), TextSize = 13, FontFace = Hud.FONT_BOLD, ZIndex = 13 })
 		classCards[class] = { button = button, count = count }
 		button.Activated:Connect(function()
 			actionRemote:FireServer("class", class)
@@ -190,8 +190,8 @@ end
 local function buildResults(gui: ScreenGui)
 	local panel = centerPanel(gui, "Results", 220)
 	ui.results = panel
-	ui.resultTitle = Hud.text(panel, { Position = UDim2.fromOffset(16, 18), Size = UDim2.new(1, -32, 0, 40), TextSize = 32, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 11 })
-	ui.resultYou = Hud.text(panel, { Position = UDim2.fromOffset(16, 62), Size = UDim2.new(1, -32, 0, 22), TextSize = 18, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 11 })
+	ui.resultTitle = Hud.text(panel, { Position = UDim2.fromOffset(16, 18), Size = UDim2.new(1, -32, 0, 40), TextSize = 32, FontFace = Hud.FONT_BOLD, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 11 })
+	ui.resultYou = Hud.text(panel, { Position = UDim2.fromOffset(16, 62), Size = UDim2.new(1, -32, 0, 22), TextSize = 18, FontFace = Hud.FONT_BOLD, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 11 })
 	ui.resultReason = Hud.text(panel, { Position = UDim2.fromOffset(16, 96), Size = UDim2.new(1, -32, 0, 22), TextSize = 16, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 11 })
 	ui.resultStats = Hud.text(panel, { Position = UDim2.fromOffset(16, 126), Size = UDim2.new(1, -32, 0, 22), TextSize = 14, TextColor3 = Hud.DIM, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 11 })
 	ui.resultNext = Hud.text(panel, { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -14), Size = UDim2.new(1, -32, 0, 20), TextSize = 14, TextColor3 = Hud.CYAN, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 11 })
@@ -386,7 +386,7 @@ function MatchHud.init()
 		Position = UDim2.new(0.5, 0, 0, 110),
 		Size = UDim2.fromOffset(760, 26),
 		TextSize = 17,
-		Font = Enum.Font.GothamBold,
+		FontFace = Hud.FONT_BOLD,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		BackgroundTransparency = 0.45,
 		BackgroundColor3 = Hud.PANEL,
