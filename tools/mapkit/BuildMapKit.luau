@@ -33,10 +33,11 @@
 -- Everything still blocks sight and shots. Fonts: Zekton for signs and headings, Roboto Mono for data.
 -- Pieces scale cleanly with Model:ScaleTo.
 --
--- Textures: PS1-style pixel art from tools/mapkit/textures (make_textures.py), uploaded as image assets. A
--- build makes each one a MaterialVariant in MaterialService (AxiomSteel, AxiomTread, AxiomWorn, AxiomRubber,
--- AxiomCardboard, AxiomLeather, AxiomHazard), and kit parts use the one for their material. The textures
--- are grey, so part colours still set the tone; a part shows its plain colour if its texture can't load.
+-- Textures: PS1-style pixel art (256 px tiles shown at 1024) from tools/mapkit/textures (make_textures.py),
+-- uploaded as image assets. A build makes each one a MaterialVariant in MaterialService (AxiomSteel,
+-- AxiomTread, AxiomWorn, AxiomRubber, AxiomCardboard, AxiomLeather, AxiomHazard), and kit parts use the one
+-- for their material. The textures are grey, so part colours still set the tone; a part shows its plain
+-- colour if its texture can't load.
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local CollectionService = game:GetService("CollectionService")
 local MaterialService = game:GetService("MaterialService")
@@ -92,17 +93,21 @@ local RIB_W, CORNICE_H, KICK_H, RAIL_Y0, RAIL_Y1 = 0.6, 0.75, 1.2, 4.1, 4.6
 local DESK_H = 2.8
 
 ------------------------------------------------------------------------------------------------------------
--- Textures (see the header). StudsPerTile sets how big each tile is; every tile is 64 pixels across.
+-- Textures (see the header). Every tile is 256 pixels across; StudsPerTile sets how many studs it covers,
+-- so steel shows about 26 pixels per stud. Organic tiling shuffles the tiles of the textures without a
+-- direction so their repeats don't line up; tread, cardboard and hazard stripes are regular patterns, so
+-- they tile normally.
+local ORGANIC, REGULAR = Enum.MaterialPattern.Organic, Enum.MaterialPattern.Regular
 
 local TEXTURES = {
-	{ name = "AxiomSteel", base = MAT.Metal, id = "rbxassetid://92667941928592", studs = 4 },
-	{ name = "AxiomTread", base = MAT.DiamondPlate, id = "rbxassetid://78642924716134", studs = 4 },
-	{ name = "AxiomWorn", base = MAT.CorrodedMetal, id = "rbxassetid://94243460407873", studs = 4 },
-	{ name = "AxiomRubber", base = MAT.Rubber, id = "rbxassetid://99652311649664", studs = 4 },
-	{ name = "AxiomCardboard", base = MAT.Cardboard, id = "rbxassetid://124707341641719", studs = 3 },
-	{ name = "AxiomLeather", base = MAT.Leather, id = "rbxassetid://73871333309647", studs = 2 },
+	{ name = "AxiomSteel", base = MAT.Metal, id = "rbxassetid://107470682287813", studs = 10, pattern = ORGANIC },
+	{ name = "AxiomTread", base = MAT.DiamondPlate, id = "rbxassetid://126235072113949", studs = 8, pattern = REGULAR },
+	{ name = "AxiomWorn", base = MAT.CorrodedMetal, id = "rbxassetid://87147878662557", studs = 8, pattern = ORGANIC },
+	{ name = "AxiomRubber", base = MAT.Rubber, id = "rbxassetid://136086080050231", studs = 8, pattern = ORGANIC },
+	{ name = "AxiomCardboard", base = MAT.Cardboard, id = "rbxassetid://73338777651301", studs = 6, pattern = REGULAR },
+	{ name = "AxiomLeather", base = MAT.Leather, id = "rbxassetid://71087948830884", studs = 4, pattern = ORGANIC },
 	-- SmoothPlastic is used everywhere, so this one only goes on parts hazard() paints.
-	{ name = "AxiomHazard", base = MAT.SmoothPlastic, id = "rbxassetid://127092008150336", studs = 3, only = true },
+	{ name = "AxiomHazard", base = MAT.SmoothPlastic, id = "rbxassetid://118755043930389", studs = 6, pattern = REGULAR, only = true },
 }
 
 -- Base material -> the MaterialVariant kit parts of that material use.
@@ -126,6 +131,7 @@ local function ensureMaterials()
 			v.BaseMaterial = t.base
 			v.ColorMap = t.id
 			v.StudsPerTile = t.studs
+			v.MaterialPattern = t.pattern
 			v.Parent = MaterialService
 			if t.only then
 				HAZARD_VARIANT = t.name
