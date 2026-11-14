@@ -1,24 +1,28 @@
--- Builds Axiom Data Vault, the full map, from the map kit. The layout (every structural block and every kit
--- piece's place) comes from ServerStorage.DevTools.MapLayout, which tools/map/design_map.py generates;
--- edit the layout there, not here. This builds it into the place and follows the map contract in
--- src/shared/FacilityMap.luau.
+-- Builds Axiom Tower, Level 61 (the Chimera map), from ServerStorage.DevTools.MapLayout, which
+-- tools/map/design_map.py generates: every structural block and finish, every prop (the map's own prefabs and
+-- the map kit's pieces), the city outside the windows, the rain and city glow, and the place's lighting. Edit
+-- the layout in the Python, not here. The build follows the map contract in src/shared/FacilityMap.luau.
 --
 -- A one-time generator, not game code: Rojo syncs it to ServerStorage.DevTools and nothing requires it at
--- runtime. Running it REPLACES Workspace.Map and Workspace.Facility (and removes Workspace.MapKitGallery),
--- so hand edits made in Studio since the last build are lost. It needs ServerStorage.MapKit (rebuild it
--- first if the kit changed). Run it in Edit mode from the command bar (the clone skips the module cache):
+-- runtime. Running it REPLACES Workspace.Map, Workspace.Facility, Workspace.City and Workspace.Weather (and
+-- removes Workspace.MapKitGallery), so hand edits made in Studio since the last build are lost. It needs
+-- ServerStorage.MapKit for the kit pieces (gameplay pieces, racks, screens); rebuild the kit first if it
+-- changed. Run it in Edit mode from the command bar (the clone skips the module cache):
 --   require(game.ServerStorage.DevTools.BuildMap:Clone()).run()     builds in the background; Studio stays
 --       responsive. Progress shows in the Output and in DevTools' BuildMapStatus attribute.
 --   require(game.ServerStorage.DevTools.BuildMap:Clone()).build()   builds and returns when done.
+-- Lighting.Technology isn't scriptable from every context: set it to Future in the Properties window.
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local CollectionService = game:GetService("CollectionService")
 local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
+local MaterialService = game:GetService("MaterialService")
 local ServerStorage = game:GetService("ServerStorage")
 
 local BuildMap = {}
 
-local CHUNK = 120 -- pieces per frame
+local CHUNK = 150 -- pieces per frame
+local ZEKTON = "rbxasset://fonts/families/Zekton.json"
 
 local function status(text: string)
 	local tools = ServerStorage:FindFirstChild("DevTools")
@@ -50,7 +54,7 @@ local function kitIndex(): { [string]: Model }
 	return index
 end
 
--- Folders by path ("Map/Geometry/CORE"), made on demand under the two roots.
+-- Folders by path ("Map/Geometry/CORE"), made on demand under the roots.
 local function folderMaker(roots: { [string]: Instance })
 	local cache: { [string]: Instance } = {}
 	local function get(path: string): Instance
@@ -59,11 +63,13 @@ local function folderMaker(roots: { [string]: Instance })
 			return found
 		end
 		local parentPath, name = string.match(path, "^(.*)/([^/]+)$")
-		local parent = if parentPath then get(parentPath) else roots[path]
 		if not parentPath then
-			cache[path] = parent
-			return parent
+			local root = roots[path]
+			assert(root, "no root " .. path)
+			cache[path] = root
+			return root
 		end
+		local parent = get(parentPath)
 		local f = parent:FindFirstChild(name)
 		if not f then
 			f = Instance.new("Folder")
@@ -76,58 +82,204 @@ local function folderMaker(roots: { [string]: Instance })
 	return get
 end
 
-local MATERIALS = {
-	Concrete = Enum.Material.Concrete,
-	Metal = Enum.Material.Metal,
-	SmoothPlastic = Enum.Material.SmoothPlastic,
-	DiamondPlate = Enum.Material.DiamondPlate,
-	Rubber = Enum.Material.Rubber,
-	Neon = Enum.Material.Neon,
-	CorrodedMetal = Enum.Material.CorrodedMetal,
-	Glass = Enum.Material.Glass,
-	Fabric = Enum.Material.Fabric,
-	Leather = Enum.Material.Leather,
-	Cardboard = Enum.Material.Cardboard,
-}
-
-local function cframeOf(p: { number }, r: any): CFrame
-	local cf = CFrame.new(p[1], p[2], p[3])
-	if type(r) == "number" then
-		return cf * CFrame.Angles(0, math.rad(r), 0)
-	elseif type(r) == "table" then
-		return cf * CFrame.Angles(math.rad(r[1]), math.rad(r[2]), math.rad(r[3]))
-	end
-	return cf
+local function rgb(c: { number }): Color3
+	return Color3.fromRGB(c[1], c[2], c[3])
 end
 
--- A plain part from the layout: n name, f folder, p centre, s size, r turn, m material, c colour,
--- v material variant, and flags: nc (no collide), nq (no query), t transparency, refl, ns (no shadow),
--- shape ("cyl" or "ball"), tag (CollectionService), a (attributes).
-local function makeBox(rec: any): BasePart
+local materialCache: { [string]: Enum.Material } = {}
+local function materialOf(name: string?): Enum.Material
+	if not name then
+		return Enum.Material.SmoothPlastic
+	end
+	local found = materialCache[name]
+	if found then
+		return found
+	end
+	local ok, value = pcall(function()
+		return (Enum.Material :: any)[name]
+	end)
+	local m = if ok and value then value else Enum.Material.SmoothPlastic
+	materialCache[name] = m
+	return m
+end
+
+local function fontOf(name: string?, bold: boolean?): Font
+	local weight = if bold then Enum.FontWeight.Bold else Enum.FontWeight.Regular
+	if name == nil or name == "Zekton" then
+		return Font.new(ZEKTON, weight)
+	end
+	local ok, enum = pcall(function()
+		return (Enum.Font :: any)[name]
+	end)
+	if ok and enum then
+		local f = Font.fromEnum(enum)
+		if bold then
+			f.Weight = Enum.FontWeight.Bold
+		end
+		return f
+	end
+	return Font.new(ZEKTON, weight)
+end
+
+-- A SurfaceGui with one TextLabel named Text (the gui is named SignText unless the record names it), so a
+-- placement's `text` option and FacilityScreens' signs can rewrite it.
+local function makeGui(part: BasePart, g: any)
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = g.name or "SignText"
+	gui.Face = (Enum.NormalId :: any)[g.face or "Front"]
+	gui.LightInfluence = g.light or 1
+	gui.Brightness = g.bright or 1
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = g.ppu or 40
+	gui.ClipsDescendants = true
+	local label = Instance.new("TextLabel")
+	label.Name = "Text"
+	label.Size = UDim2.fromScale(1, 1)
+	label.BorderSizePixel = 0
+	label.BackgroundTransparency = if g.bg then 0 else 1
+	if g.bg then
+		label.BackgroundColor3 = rgb(g.bg)
+	end
+	label.Text = g.text or ""
+	label.TextColor3 = rgb(g.color or { 220, 220, 220 })
+	label.TextTransparency = g.tt or 0
+	label.FontFace = fontOf(g.font, g.bold == 1)
+	label.TextWrapped = g.nowrap == nil
+	label.TextXAlignment = (Enum.TextXAlignment :: any)[g.align or "Center"]
+	label.TextYAlignment = (Enum.TextYAlignment :: any)[g.valign or "Center"]
+	label.Rotation = g.rot or 0
+	if g.size then
+		label.TextSize = g.size * (g.ppu or 40)
+	else
+		label.TextScaled = true
+	end
+	local pad = math.floor((g.pad or 0.06) * (g.ppu or 40))
+	if pad > 0 then
+		local p = Instance.new("UIPadding")
+		p.PaddingLeft = UDim.new(0, pad)
+		p.PaddingRight = UDim.new(0, pad)
+		p.PaddingTop = UDim.new(0, pad)
+		p.PaddingBottom = UDim.new(0, pad)
+		p.Parent = label
+	end
+	label.Parent = gui
+	gui.Parent = part
+end
+
+local function makeLight(part: BasePart, l: any)
+	local light: Light = if l.kind == "spot" then Instance.new("SpotLight") elseif l.kind == "surface" then Instance.new("SurfaceLight") else Instance.new("PointLight")
+	light.Color = rgb(l.c)
+	light.Range = l.range
+	light.Brightness = l.brightness
+	light.Shadows = l.shadows == true
+	if l.face and (light:IsA("SpotLight") or light:IsA("SurfaceLight")) then
+		(light :: any).Face = (Enum.NormalId :: any)[l.face]
+	end
+	if l.angle and (light:IsA("SpotLight") or light:IsA("SurfaceLight")) then
+		(light :: any).Angle = l.angle
+	end
+	light.Enabled = l.off ~= true
+	light.Parent = part
+end
+
+local function makeFx(part: BasePart, kind: string)
+	local e = Instance.new("ParticleEmitter")
+	e.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	e.Rotation = NumberRange.new(0, 360)
+	e.RotSpeed = NumberRange.new(-8, 8)
+	if kind == "steam" then
+		-- Steam leaking from the plant: warmer, faster, rising.
+		e.Color = ColorSequence.new(Color3.fromRGB(210, 210, 206))
+		e.LightEmission = 0.05
+		e.LightInfluence = 0.8
+		e.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.25, 0.8), NumberSequenceKeypoint.new(1, 1) })
+		e.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 2), NumberSequenceKeypoint.new(1, 9) })
+		e.Lifetime = NumberRange.new(4, 6)
+		e.Rate = 3
+		e.Speed = NumberRange.new(1, 2.5)
+		e.SpreadAngle = Vector2.new(25, 25)
+		e.Acceleration = Vector3.new(0.3, 0.9, 0)
+	else
+		-- Cold mist rolling off the floor.
+		e.Color = ColorSequence.new(Color3.fromRGB(200, 228, 242))
+		e.LightEmission = 0.05
+		e.LightInfluence = 0.7
+		e.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.3, 0.86), NumberSequenceKeypoint.new(1, 1) })
+		e.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 4), NumberSequenceKeypoint.new(1, 10) })
+		e.Lifetime = NumberRange.new(7, 10)
+		e.Rate = 2.5
+		e.Speed = NumberRange.new(0.3, 0.8)
+		e.SpreadAngle = Vector2.new(180, 15)
+		e.Acceleration = Vector3.new(0, 0.12, 0)
+	end
+	e.Parent = part
+end
+
+local function decorate(part: BasePart, rec: any)
+	if rec.tag then
+		if type(rec.tag) == "table" then
+			for _, t in rec.tag do
+				CollectionService:AddTag(part, t)
+			end
+		else
+			CollectionService:AddTag(part, rec.tag)
+		end
+	end
+	if rec.a then
+		for key, value in rec.a do
+			part:SetAttribute(key, value)
+		end
+	end
+	if rec.gui then
+		makeGui(part, rec.gui)
+	end
+	if rec.tex then
+		for _, t in rec.tex do
+			local tx = Instance.new("Texture")
+			tx.Texture = t.id
+			tx.Face = (Enum.NormalId :: any)[t.face or "Front"]
+			tx.StudsPerTileU = t.u or 8
+			tx.StudsPerTileV = t.v or 8
+			tx.OffsetStudsU = t.ou or 0
+			tx.OffsetStudsV = t.ov or 0
+			tx.Transparency = t.t or 0
+			if t.tag then
+				CollectionService:AddTag(tx, t.tag)
+			end
+			tx.Parent = part
+		end
+	end
+	if rec.fx then
+		makeFx(part, rec.fx)
+	end
+	if rec.light then
+		makeLight(part, rec.light)
+	end
+end
+
+local function newPart(rec: any): BasePart
 	local part: BasePart
-	if rec.wedge then
+	local shape = rec.shape or rec.sh
+	if rec.wedge or shape == "wedge" then
 		part = Instance.new("WedgePart")
 	else
 		local p = Instance.new("Part")
-		if rec.shape == "cyl" then
+		if shape == "cyl" then
 			p.Shape = Enum.PartType.Cylinder
-		elseif rec.shape == "ball" then
+		elseif shape == "ball" then
 			p.Shape = Enum.PartType.Ball
 		end
 		part = p
 	end
 	part.Name = rec.n
 	part.Size = Vector3.new(rec.s[1], rec.s[2], rec.s[3])
-	part.CFrame = cframeOf(rec.p, rec.r)
-	part.Material = MATERIALS[rec.m] or Enum.Material.SmoothPlastic
-	part.Color = Color3.fromRGB(rec.c[1], rec.c[2], rec.c[3])
+	part.Material = materialOf(rec.m)
+	part.Color = rgb(rec.c)
 	if rec.v then
 		part.MaterialVariant = rec.v
 	end
 	part.Anchored = true
 	part.CanTouch = false
-	part.CanCollide = not rec.nc
-	part.CanQuery = not rec.nq
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth
 	if rec.t then
@@ -139,91 +291,65 @@ local function makeBox(rec: any): BasePart
 	if rec.ns then
 		part.CastShadow = false
 	end
-	if rec.tag then
-		CollectionService:AddTag(part, rec.tag)
-	end
-	if rec.a then
-		for key, value in rec.a do
-			part:SetAttribute(key, value)
-		end
-	end
-	if rec.fx == "mist" then
-		-- Cold mist rolling off the floor (the Cooling Plant).
-		local e = Instance.new("ParticleEmitter")
-		e.Texture = "rbxasset://textures/particles/smoke_main.dds"
-		e.Color = ColorSequence.new(Color3.fromRGB(200, 228, 242))
-		e.LightEmission = 0.05
-		e.LightInfluence = 0.7
-		e.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.3, 0.86),
-			NumberSequenceKeypoint.new(1, 1),
-		})
-		e.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 4), NumberSequenceKeypoint.new(1, 10) })
-		e.Lifetime = NumberRange.new(7, 10)
-		e.Rate = 2.5
-		e.Speed = NumberRange.new(0.3, 0.8)
-		e.SpreadAngle = Vector2.new(180, 15)
-		e.Acceleration = Vector3.new(0, 0.12, 0)
-		e.Rotation = NumberRange.new(0, 360)
-		e.RotSpeed = NumberRange.new(-8, 8)
-		e.Parent = part
-	end
-	if rec.light then
-		local l = rec.light
-		local light: Light = if l.kind == "spot" then Instance.new("SpotLight") elseif l.kind == "surface" then Instance.new("SurfaceLight") else Instance.new("PointLight")
-		light.Color = Color3.fromRGB(l.c[1], l.c[2], l.c[3])
-		light.Range = l.range
-		light.Brightness = l.brightness
-		light.Shadows = l.shadows == true
-		if l.face and (light:IsA("SpotLight") or light:IsA("SurfaceLight")) then
-			(light :: any).Face = Enum.NormalId[l.face]
-		end
-		if l.angle and (light:IsA("SpotLight") or light:IsA("SurfaceLight")) then
-			(light :: any).Angle = l.angle
-		end
-		light.Enabled = l.off ~= true
-		light.Parent = part
-	end
 	return part
 end
 
--- A corner post: a steel column filling a room's corner, with a striped corner guard at its foot.
-local function makePost(rec: { any }, parent: Instance)
-	local x0, x1, z0, z1, y0, h, corner = rec[1], rec[2], rec[3], rec[4], rec[5], rec[6], rec[7]
-	local post = Instance.new("Part")
-	post.Name = "CornerPost"
-	post.Size = Vector3.new(x1 - x0, h, z1 - z0)
-	post.CFrame = CFrame.new((x0 + x1) / 2, y0 + h / 2, (z0 + z1) / 2)
-	post.Material = Enum.Material.Metal
-	post.MaterialVariant = "AxiomSteel"
-	post.Color = Color3.fromRGB(28, 30, 34)
-	post.Anchored = true
-	post.CanTouch = false
-	post.Parent = parent
-	-- The room side of the post: the corner guard wraps its outer edge.
-	local ex = if string.find(corner, "W") then x1 else x0
-	local ez = if string.find(corner, "N") then z1 else z0
-	local sx = if string.find(corner, "W") then 1 else -1
-	local sz = if string.find(corner, "N") then 1 else -1
-	for i = 1, 2 do
-		local guard = Instance.new("Part")
-		guard.Name = "CornerGuard"
-		guard.Anchored = true
-		guard.CanCollide = false
-		guard.CanTouch = false
-		guard.Material = Enum.Material.SmoothPlastic
-		guard.MaterialVariant = "AxiomHazard"
-		guard.Color = Color3.fromRGB(190, 145, 30)
-		if i == 1 then
-			guard.Size = Vector3.new(0.08, 4, 0.7)
-			guard.CFrame = CFrame.new(ex + sx * 0.04, y0 + 2.2, ez - sz * 0.35)
-		else
-			guard.Size = Vector3.new(0.7, 4, 0.08)
-			guard.CFrame = CFrame.new(ex - sx * 0.35, y0 + 2.2, ez + sz * 0.04)
-		end
-		guard.Parent = parent
+local function angles(r: any): CFrame
+	if type(r) == "number" then
+		return CFrame.Angles(0, math.rad(r), 0)
+	elseif type(r) == "table" then
+		return CFrame.Angles(math.rad(r[1]), math.rad(r[2]), math.rad(r[3]))
 	end
+	return CFrame.identity
+end
+
+-- A plain world part from the layout: n name, f folder, p centre, s size, r turn, m material, c colour,
+-- v material variant; flags nc (no collide), nq (no raycasts), t, refl, ns (no shadow), shape, tag, a, gui,
+-- tex, fx, light.
+local function makeBox(rec: any): BasePart
+	local part = newPart(rec)
+	part.CFrame = CFrame.new(rec.p[1], rec.p[2], rec.p[3]) * angles(rec.r)
+	part.CanCollide = not rec.nc
+	part.CanQuery = not rec.nq
+	decorate(part, rec)
+	return part
+end
+
+-- A prefab template: parts relative to the pivot, built once and cloned for each placement. Parts with
+-- `weld` are welded (unanchored) to the named part, so they move with it (a door's trim on its Panel).
+local function buildPrefab(name: string, def: any): Model
+	local model = Instance.new("Model")
+	model.Name = name
+	local byName: { [string]: BasePart } = {}
+	local welds = {}
+	for _, rec in def.parts do
+		local part = newPart(rec)
+		local cf = rec.cf
+		part.CFrame = CFrame.new(cf[1], cf[2], cf[3]) * CFrame.Angles(math.rad(cf[4]), math.rad(cf[5]), math.rad(cf[6]))
+		part.CanCollide = rec.col == 1
+		part.CanQuery = rec.nq == nil
+		decorate(part, rec)
+		part.Parent = model
+		if not byName[rec.n] then
+			byName[rec.n] = part
+		end
+		if rec.weld then
+			table.insert(welds, { part, rec.weld })
+		end
+	end
+	for _, w in welds do
+		local part, to = w[1], byName[w[2]]
+		if to then
+			part.Anchored = false
+			part.Massless = true
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = to
+			weld.Part1 = part
+			weld.Parent = part
+		end
+	end
+	model.WorldPivot = CFrame.identity
+	return model
 end
 
 -- Turns a security camera's head (about its joint) so the Lens looks at `target`.
@@ -233,11 +359,11 @@ local function aimCamera(model: Model, target: Vector3)
 	if not (joint and lens) then
 		return
 	end
-	local function angles(look: Vector3): (number, number)
+	local function anglesOf(look: Vector3): (number, number)
 		return math.atan2(-look.X, -look.Z), math.asin(math.clamp(look.Y, -1, 1))
 	end
-	local yaw0, pitch0 = angles(lens.CFrame.LookVector)
-	local yaw1, pitch1 = angles((target - lens.Position).Unit)
+	local yaw0, pitch0 = anglesOf(lens.CFrame.LookVector)
+	local yaw1, pitch1 = anglesOf((target - lens.Position).Unit)
 	local pivot = CFrame.new(joint.Position)
 	local from = CFrame.Angles(0, yaw0, 0) * CFrame.Angles(pitch0, 0, 0)
 	local to = CFrame.Angles(0, yaw1, 0) * CFrame.Angles(pitch1, 0, 0)
@@ -254,19 +380,22 @@ end
 local function setLight(model: Instance, l: any)
 	for _, d in model:GetDescendants() do
 		if d:IsA("Light") then
-			if l.c then
-				d.Color = Color3.fromRGB(l.c[1], l.c[2], l.c[3])
+			if l.kind then
+				-- A different kind of light: replace it.
+				local parent = d.Parent :: BasePart
+				d:Destroy()
+				makeLight(parent, l)
+			else
+				if l.c then
+					d.Color = rgb(l.c)
+				end
+				if l.range then
+					d.Range = l.range
+				end
+				if l.brightness then
+					d.Brightness = l.brightness
+				end
 			end
-			if l.range then
-				d.Range = l.range
-			end
-			if l.brightness then
-				d.Brightness = l.brightness
-			end
-		elseif d:IsA("BasePart") and d.Name == "Fixture" and l.c then
-			-- Tint the glowing part toward the light's colour.
-			local c = Color3.fromRGB(l.c[1], l.c[2], l.c[3])
-			d.Color = d.Color:Lerp(c, 0.6)
 		end
 	end
 end
@@ -291,19 +420,18 @@ local function setFeeds(model: Instance, feed: string, cameraId: string?)
 	end
 end
 
--- Places one kit piece and applies its options (see design_map.py's piece()).
-local function placePiece(rec: { any }, kit: { [string]: Model }, getFolder: (string) -> Instance, roots: { [string]: Instance }): Instance?
+-- Places one piece (a prefab, or a kit piece) and applies its options (see design_map.py's piece()).
+local function placePiece(rec: { any }, prefabs: { [string]: Model }, kit: { [string]: Model }, getFolder: (string) -> Instance): Instance?
 	local name, folderPath, x, y, z, yaw, opts = rec[1], rec[2], rec[3], rec[4], rec[5], rec[6], rec[7]
-	local source = kit[name]
+	local source = prefabs[name] or kit[name]
 	if not source then
-		warn(`[BuildMap] no kit piece {name}`)
+		warn(`[BuildMap] no prefab or kit piece {name}`)
 		return nil
 	end
 	local model = source:Clone()
 	local cf = CFrame.new(x, y, z) * CFrame.Angles(0, math.rad(yaw), 0)
 	if opts and opts.look then
-		local at = Vector3.new(x, y, z)
-		cf = CFrame.lookAt(at, Vector3.new(opts.look[1], opts.look[2], opts.look[3]))
+		cf = CFrame.lookAt(Vector3.new(x, y, z), Vector3.new(opts.look[1], opts.look[2], opts.look[3]))
 	end
 	if opts and opts.tilt then
 		cf *= CFrame.Angles(math.rad(opts.tilt), 0, 0)
@@ -338,7 +466,16 @@ local function placePiece(rec: { any }, kit: { [string]: Model }, getFolder: (st
 				elseif d:IsA("BasePart") and d.Name == "Fixture" then
 					d.Name = "DeadFixture"
 					d.Material = Enum.Material.SmoothPlastic
-					d.Color = Color3.fromRGB(34, 34, 36)
+					d.Color = Color3.fromRGB(46, 46, 48)
+				end
+			end
+		end
+		if opts.flicker then
+			-- A failing fixture: the client's Ambience makes it stutter while its room has power.
+			for _, d in model:GetDescendants() do
+				if d:IsA("BasePart") and d.Name == "Fixture" then
+					CollectionService:AddTag(d, "Flicker")
+					d:SetAttribute("FlickerMode", opts.flicker)
 				end
 			end
 		end
@@ -346,7 +483,6 @@ local function placePiece(rec: { any }, kit: { [string]: Model }, getFolder: (st
 			aimCamera(model, Vector3.new(opts.aim[1], opts.aim[2], opts.aim[3]))
 		end
 		if opts.strip then
-			-- Parts to leave out (a sign's stripe, a desk's cables...).
 			for _, d in model:GetDescendants() do
 				if d:IsA("BasePart") and table.find(opts.strip, d.Name) then
 					d:Destroy()
@@ -401,8 +537,8 @@ local function placePiece(rec: { any }, kit: { [string]: Model }, getFolder: (st
 	return model
 end
 
-local function makeRoots(): (Folder, Folder)
-	for _, name in { "Map", "Facility", "MapKitGallery" } do
+local function makeRoots(): (Folder, Folder, Folder, Folder)
+	for _, name in { "Map", "Facility", "MapKitGallery", "City", "Weather" } do
 		local old = workspace:FindFirstChild(name)
 		if old then
 			old:Destroy()
@@ -422,26 +558,146 @@ local function makeRoots(): (Folder, Folder)
 		f.Name = name
 		f.Parent = facility
 	end
+	local city = Instance.new("Folder")
+	city.Name = "City"
+	local weather = Instance.new("Folder")
+	weather.Name = "Weather"
 	map.Parent = workspace
 	facility.Parent = workspace
-	return map, facility
+	city.Parent = workspace
+	weather.Parent = workspace
+	return map, facility, city, weather
+end
+
+local function ensureMaterials(list: any)
+	for _, m in list or {} do
+		local variant = MaterialService:FindFirstChild(m.name)
+		if not (variant and variant:IsA("MaterialVariant")) then
+			variant = Instance.new("MaterialVariant")
+			variant.Name = m.name
+		end
+		local v = variant :: MaterialVariant
+		v.BaseMaterial = materialOf(m.base)
+		v.ColorMap = m.id
+		v.StudsPerTile = m.studs
+		v.MaterialPattern = if m.pattern == "Organic" then Enum.MaterialPattern.Organic else Enum.MaterialPattern.Regular
+		v.Parent = MaterialService
+	end
+end
+
+local function effect(className: string, name: string): Instance
+	local e = Lighting:FindFirstChild(name)
+	if not (e and e.ClassName == className) then
+		if e then
+			e:Destroy()
+		end
+		e = Instance.new(className)
+		e.Name = name
+		e.Parent = Lighting
+	end
+	return e :: Instance
 end
 
 local function setupLighting(l: any)
 	if not l then
 		return
 	end
-	Lighting.ClockTime = 0
-	Lighting.Brightness = 0
-	Lighting.Ambient = Color3.fromRGB(l.ambient[1], l.ambient[2], l.ambient[3])
-	Lighting.OutdoorAmbient = Color3.fromRGB(8, 8, 10)
+	Lighting.ClockTime = l.clock or 0
+	Lighting.Brightness = l.brightness or 0
+	Lighting.Ambient = rgb(l.ambient)
+	Lighting.OutdoorAmbient = rgb(l.outdoor or { 8, 8, 10 })
 	Lighting.EnvironmentDiffuseScale = l.diffuse
 	Lighting.EnvironmentSpecularScale = l.specular
 	Lighting.GlobalShadows = true
 	Lighting.ExposureCompensation = l.exposure or 0
+	Lighting.FogEnd = 100000
 	pcall(function()
 		(Lighting :: any).Technology = Enum.Technology.Future
 	end)
+	if l.atmosphere then
+		local a = effect("Atmosphere", "Atmosphere") :: Atmosphere
+		a.Density = l.atmosphere.density
+		a.Offset = l.atmosphere.offset
+		a.Color = rgb(l.atmosphere.color)
+		a.Decay = rgb(l.atmosphere.decay)
+		a.Glare = l.atmosphere.glare
+		a.Haze = l.atmosphere.haze
+	end
+	if l.bloom then
+		local b = effect("BloomEffect", "Bloom") :: BloomEffect
+		b.Intensity = l.bloom.intensity
+		b.Size = l.bloom.size
+		b.Threshold = l.bloom.threshold
+	end
+	if l.grade then
+		local c = effect("ColorCorrectionEffect", "Grade") :: ColorCorrectionEffect
+		c.Brightness = l.grade.brightness
+		c.Contrast = l.grade.contrast
+		c.Saturation = l.grade.saturation
+		c.TintColor = rgb(l.grade.tint)
+	end
+	if l.sky then
+		local sky = effect("Sky", "Sky") :: Sky
+		sky.StarCount = l.sky.stars or 0
+		sky.CelestialBodiesShown = false
+	end
+end
+
+-- Rain past a window: streaks falling through the slab's volume.
+local function makeRain(rec: any, parent: Instance)
+	local p = Instance.new("Part")
+	p.Name = "Rain"
+	p.Size = Vector3.new(rec.s[1], rec.s[2], rec.s[3])
+	p.CFrame = CFrame.new(rec.c[1], rec.c[2], rec.c[3])
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Transparency = 1
+	p.CastShadow = false
+	local e = Instance.new("ParticleEmitter")
+	e.Name = "Rain"
+	e.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	e.EmissionDirection = Enum.NormalId.Bottom
+	e.Orientation = Enum.ParticleOrientation.VelocityParallel
+	e.Color = ColorSequence.new(Color3.fromRGB(190, 200, 214))
+	e.LightEmission = 0.25
+	e.LightInfluence = 0.6
+	e.Transparency = NumberSequence.new(0.55)
+	e.Size = NumberSequence.new(0.12)
+	e.Squash = NumberSequence.new(2.6)
+	e.Speed = NumberRange.new(75, 90)
+	e.Lifetime = NumberRange.new(rec.fall / 85, rec.fall / 80)
+	e.Rate = rec.rate
+	e.SpreadAngle = Vector2.new(3, 3)
+	e.Acceleration = Vector3.new(3, -30, 1)
+	e.Parent = p
+	p.Parent = parent
+end
+
+-- City glow: a cool spotlight outside a window, aimed in and down. Ambience flashes these for lightning.
+local function makeGlow(rec: any, parent: Instance)
+	local p = Instance.new("Part")
+	p.Name = "CityGlow"
+	p.Size = Vector3.new(1, 1, 1)
+	p.CFrame = CFrame.lookAt(Vector3.new(rec.p[1], rec.p[2], rec.p[3]), Vector3.new(rec.look[1], rec.look[2], rec.look[3]))
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Transparency = 1
+	p.CastShadow = false
+	local s = Instance.new("SpotLight")
+	s.Face = Enum.NormalId.Front
+	s.Color = rgb(rec.c)
+	s.Brightness = rec.b
+	s.Range = rec.range
+	s.Angle = rec.angle
+	s.Shadows = rec.shadows == true
+	s.Parent = p
+	p:SetAttribute("BaseBrightness", rec.b)
+	CollectionService:AddTag(p, "CityGlow")
+	p.Parent = parent
 end
 
 function BuildMap.build(): string
@@ -450,11 +706,24 @@ function BuildMap.build(): string
 	local kit = kitIndex()
 	local recording = nil
 	pcall(function()
-		recording = ChangeHistoryService:TryBeginRecording("Build Axiom Data Vault")
+		recording = ChangeHistoryService:TryBeginRecording("Build Axiom Tower")
 	end)
-	local map, facility = makeRoots()
-	local roots = { Map = map, Facility = facility }
+	ensureMaterials(layout.materials)
+	local map, facility, city, weather = makeRoots()
+	local roots = { Map = map, Facility = facility, City = city, Weather = weather }
 	local getFolder = folderMaker(roots)
+
+	-- Prefab templates.
+	local prefabs: { [string]: Model } = {}
+	local n = 0
+	for name, def in layout.prefabs do
+		prefabs[name] = buildPrefab(name, def)
+		n += 1
+		if n % 40 == 0 then
+			task.wait()
+		end
+	end
+	status(`{n} prefabs ready`)
 
 	-- Rooms, their light folders and emergency-light folders.
 	local game_ = layout.game
@@ -481,8 +750,8 @@ function BuildMap.build(): string
 	end
 	status("rooms done")
 
-	-- Structure and plain parts, in chunks.
-	local n = 0
+	-- Structure, finishes and plain parts, in chunks.
+	n = 0
 	for _, rec in layout.boxes do
 		makeBox(rec).Parent = getFolder(rec.f)
 		n += 1
@@ -490,18 +759,11 @@ function BuildMap.build(): string
 			task.wait()
 		end
 	end
-	local postFolder = getFolder("Map/Geometry/Structure")
-	for i, rec in layout.posts do
-		makePost(rec, getFolder("Map/Geometry/" .. rec[8]))
-		if i % 200 == 0 then
-			task.wait()
-		end
-	end
-	status(`structure done: {#layout.boxes} boxes, {#layout.posts} posts`)
+	status(`structure done: {#layout.boxes} boxes`)
 
-	-- Kit pieces.
+	-- Pieces.
 	for i, rec in layout.pieces do
-		placePiece(rec, kit, getFolder, roots)
+		placePiece(rec, prefabs, kit, getFolder)
 		if i % CHUNK == 0 then
 			status(`pieces {i}/{#layout.pieces}`)
 			task.wait()
@@ -542,6 +804,23 @@ function BuildMap.build(): string
 		end
 		spawn.Parent = getFolder("Facility/Spawns")
 	end
+
+	-- The city and the weather.
+	n = 0
+	for _, rec in layout.city or {} do
+		makeBox(rec).Parent = city
+		n += 1
+		if n % 300 == 0 then
+			task.wait()
+		end
+	end
+	for _, rec in (layout.weather and layout.weather.rain) or {} do
+		makeRain(rec, weather)
+	end
+	for _, rec in (layout.weather and layout.weather.glow) or {} do
+		makeGlow(rec, weather)
+	end
+	status(`city done: {n} parts`)
 	setupLighting(layout.lighting)
 
 	if recording then
@@ -555,7 +834,7 @@ function BuildMap.build(): string
 			end
 		end
 	end
-	local text = string.format("built Axiom Data Vault: %d parts, %d pieces in %.1f s", parts, #layout.pieces, os.clock() - started)
+	local text = string.format("built Axiom Tower: %d parts (+%d city), %d pieces in %.1f s", parts, n, #layout.pieces, os.clock() - started)
 	status(text)
 	return text
 end

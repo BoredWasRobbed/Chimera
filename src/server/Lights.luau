@@ -11,7 +11,7 @@ local MapData = require(script.Parent.MapData)
 
 local Lights = {}
 
-local EMERGENCY_ON = Color3.fromRGB(255, 50, 35)
+local EMERGENCY_ON = Color3.fromRGB(255, 160, 60) -- amber, as the design doc has it: red is the Chimera's
 local EMERGENCY_OFF = Color3.fromRGB(35, 35, 38)
 local FLOOD_ON = Color3.fromRGB(235, 245, 255)
 local FLOOD_OFF = Color3.fromRGB(30, 32, 36)
@@ -123,7 +123,7 @@ function Lights.cutPower(roomId: string)
 	end
 end
 
--- A rebooted terminal's wing: red emergency lamps in each of its rooms, on for the rest of the match.
+-- A rebooted terminal's wing: amber emergency lamps in each of its rooms, on for the rest of the match.
 function Lights.setEmergency(wing: string, on: boolean)
 	for roomId, parts in emergency do
 		local room = MapData.rooms[roomId]

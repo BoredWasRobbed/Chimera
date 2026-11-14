@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 
 local version = require(ReplicatedStorage.Shared.Version)
+local Ambience = require(script.Ambience)
 local ChimeraClient = require(script.ChimeraClient)
 local CuePlayer = require(script.CuePlayer)
 local DebugPanel = require(script.DebugPanel)
@@ -61,6 +62,13 @@ task.spawn(function()
 	local ok, err = pcall(FacilityScreens.init)
 	if not ok then
 		warn(`[Chimera] facility screens failed to start: {err}`)
+	end
+end)
+-- The building's mood (failing lights, lightning, rain on the glass): decoration only too.
+task.spawn(function()
+	local ok, err = pcall(Ambience.init)
+	if not ok then
+		warn(`[Chimera] ambience failed to start: {err}`)
 	end
 end)
 

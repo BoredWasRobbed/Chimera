@@ -42,7 +42,7 @@ A server plays round after round. In the lobby, Chimera Chance picks the Chimera
 
 ### Milestone 1: movement and replication
 
-The graybox (the Core, three wings and Insertion; 14 cameras, 8 shell docks, 11 lockable doors, 3 terminals, 5 charging stations, 10 Overload traps, and since milestone 3 the Core platform, its floodlights and emergency lights in every wing room), merc movement, the Chimera's facility mode, shells on a server-authoritative controller, and perception-gated replication. The full map (see "The full map: Axiom Data Vault") has since replaced the graybox in the place.
+The graybox (the Core, three wings and Insertion; 14 cameras, 8 shell docks, 11 lockable doors, 3 terminals, 5 charging stations, 10 Overload traps, and since milestone 3 the Core platform, its floodlights and emergency lights in every wing room), merc movement, the Chimera's facility mode, shells on a server-authoritative controller, and perception-gated replication. The full map (see "The full map: Axiom Tower, Level 61") has since replaced the graybox in the place.
 
 ### Milestone 2: combat, visibility, downs and assimilation
 
@@ -66,7 +66,7 @@ Calls made where the design doc gives no number or rule, all easy to change in `
 ### Milestone 3: terminals, the upload meter and both finales
 
 - **Rounds.** Lobby (20 s) → Loadout (25 s) → Deployment (15 s) → the race (up to 8:00) → a finale (2:00, never past 10:00 from the start of the race) → Results (10 s) → back to the lobby. A round needs 4 players. Chimera Chance: a weight that starts at 1, gains 1 for each round played as a merc and resets when picked; the lobby shows everyone's chance. During Deployment mercs enter at the Insertion lift and the Chimera can hop cameras but can't use Interface, modules or shells.
-- **Terminals.** Hold E to reboot: 40 s (Technician 28 s), and progress stays when you let go. One operator at a time; the operator can't shoot or use gear, and any damage interrupts. The Chimera gets an alert naming the terminal and room when a reboot starts. Corrupt takes 20% off, locks the terminal for 10 s and adds 3% upload. A rebooted terminal lights its wing's red emergency lamps and shuts that wing's docks for the rest of the match. Any three of the full map's five terminals trigger Lockdown (on the slice's graybox it was two of three; `Config.Terminals.ForLockdown`).
+- **Terminals.** Hold E to reboot: 40 s (Technician 28 s), and progress stays when you let go. One operator at a time; the operator can't shoot or use gear, and any damage interrupts. The Chimera gets an alert naming the terminal and room when a reboot starts. Corrupt takes 20% off, locks the terminal for 10 s and adds 3% upload. A rebooted terminal lights its wing's amber emergency lamps and shuts that wing's docks for the rest of the match. Any three of the full map's five terminals trigger Lockdown (on the slice's graybox it was two of three; `Config.Terminals.ForLockdown`).
 - **The upload meter and Threat Level.** The meter fills over 8:00 and moves with the match events: down +10%, assimilation +15%, bleed-out +5%, corrupted terminal +3%, shell destroyed with the Chimera inside −10%. Threat rises at 2:00, 4:00 and 6:00 and is 4 in either finale. Both teams see the meter, every terminal's progress and Threat on the top bar.
 - **Lockdown and the Purge finale.** Every dock shuts down and the Chimera is locked into one body: the shell it's in, or a last one booted at a Core dock 5 s later. Mercs standing on the Core platform hold it; the Chimera's body anywhere in the Core stalls them. The Core is floodlit (no Blackout there) and a scan pulse Reveals the Chimera every 15 s. Destroying the body or 45 s held wins it for the mercs; time running out wins it for the Chimera.
 - **The Upload finale.** The Chimera's body on the platform holds; any standing merc in the Core stalls it. Every Core light dies, and every 15 s a network scan outlines the mercs in the Core for the Chimera. A lost body costs 5 s of held time and a new one boots at a Core dock 10 s later. 45 s held wins it for the Chimera; time running out wins it for the mercs.
@@ -116,53 +116,59 @@ Calls made where the request left it open, all easy to change in ShellRig:
 
 The map is built in Studio, and the code finds everything by folder and attribute: see the header of `src/shared/FacilityMap.luau`. The server checks the layout rules at startup and warns in the Output about one-way camera links, rooms without a camera and docks no camera can see.
 
-`tools/map/BuildMap.luau` builds the current map (see below). `tools/graybox/BuildGraybox.luau` still builds the old three-wing graybox for reference; both replace `Workspace.Map` and `Workspace.Facility`, so hand edits are lost.
+`tools/map/BuildMap.luau` builds the current map (see below). `tools/graybox/BuildGraybox.luau` still builds the old three-wing graybox for reference; both replace `Workspace.Map` and `Workspace.Facility` (BuildMap also `Workspace.City` and `Workspace.Weather`), so hand edits are lost.
 
-### The full map: Axiom Data Vault
+### The full map: Axiom Tower, Level 61
 
-The place holds the full map from the design doc: five wings round the Core, the Insertion lift and the Fabrication Bays, built entirely from the map kit. The plan is `tools/map/plan.png` (north is up; the Observation Deck is the outlined upper level over Insertion).
+Axiom Data Vault is the 61st floor of a corporate skyscraper at night. The squad rides the service lift up and steps out into the elevator lobby; ahead is the Reception (the Core), a two-storey atrium round the reception desk, with a wall of glass on its far side looking out over the city. The wings wrap round it. The plan is `tools/map/plan.png` (north, where the glass faces downtown, is up; the Observation Deck is the outlined upper level over the lobby).
 
 | Area | Rooms (the room the game sees, with its camera) |
 | --- | --- |
-| The Core | The Core: three storeys round the Uplink (a steel tower to the roof with racks at its base and blue data lines), the finale platform with the Purge console, four rack islands, cable trenches to the gates, a lighting rig with the four floodlights. 3 cameras, 2 docks |
-| Insertion | Insertion: the brightly lit lift lobby with lockers and a security desk; the squad spawns inside the freight lift |
-| Observation Decks (upper level) | Observation Deck: a glass gallery over the Core with control consoles and the terminal; the West and East Stair Halls climb to it (a dock at the foot of each) |
-| Office Wing (west) | Reception, Cubicle Floor (eight cubicle blocks, the wing's dock), Executive Office (terminal), Conference Room (dock) |
-| Fabrication Bays (north-west) | Print Floor (print gantries over half-printed chassis), Assembly Bay; one dock each, online until Lockdown |
-| Server Farms (north) | Rack Hall (contained aisles either side of a walkway), Data Hall (a maze of rack rows), Network Operations (terminal) |
-| Cooling Plant (north-east) | Pump Room, Chiller Hall (coolant tanks and cold mist), Plant Control (terminal) |
-| Maintenance Tunnels (east) | Service Tunnel, Pipe Gallery (2 cameras), Boiler Room (terminal), South Tunnel; most of the Overload traps |
+| The Reception (the Core) | Reception: the round reception desk on a stone dais (the finale platform) about the Uplink, a black glass monolith to the ceiling; the Purge console beside the desk; speed gates in from the lobby; lounges, columns with uplights, the Axiom name on the walls, the city through the glass, the four floodlights on the columns. 2 cameras (CORE_NE, the Chimera's start camera, and CORE_SW), 2 docks |
+| The lift lobby (Insertion) | Elevator Lobby: the lift bank (one car stuck ajar on a dark shaft); the squad spawns inside the service car |
+| Observation Deck (upper level) | Observation Deck: a lounge behind glass over the atrium, with the terminal and both of the wing's docks; the West and East Stairwells (fire stairs, the way down chained off) climb to it from the service corridors |
+| Office Wing (west) | Open Office (cubicles along the windows, the corridor behind, a dock), Executive Office (terminal; the corner office), Conference Room (dock), Break Room (kitchen, vending machines, restrooms), Records Room (shelving) |
+| Server Farms (east) | Data Hall (contained rack aisles, a dock), Network Operations (terminal; glass onto the Data Hall), UPS Room, Rack Hall (dock) |
+| Cooling Plant (south-east) | Pump Room (louvres to the storm, a dock), Chiller Hall (chillers, tanks, mist; a dock), Plant Control (terminal) |
+| Maintenance (back of house) | West and East Service Corridors (the east one has a dock), Freight Hall (the freight lift, pallets; a dock), Boiler Room (terminal) |
+| Fabrication Bays (behind the lifts) | Assembly Bay, Print Floor (shells half-printed on gantries); one dock each, online until Lockdown |
 
-In all: 21 rooms, 24 cameras, 14 shell docks, 5 terminals, 20 lockable doors, 5 charging stations and 16 Overload traps, about 79,000 parts. The wings also join each other (Fabrication to the Rack Hall and the Cubicle Floor, the Rack Hall to the Pump Room, the Pump Room to the Service Tunnel, the stair halls to Reception and the South Tunnel), so every wing can be reached without crossing the Core.
+In all: 23 rooms, 24 cameras, 14 shell docks, 5 terminals, 23 lockable doors, 5 charging stations and 15 Overload traps, about 29,000 parts and 2,600 more in the city. The wings join each other (the Break Room's service door and the Records Room lead to the back of house; the Rack Hall leads to the Cooling Plant; the service corridors join the Reception, the stairs, the Freight Hall, the Fabrication Bays and the Chiller Hall), so every wing can be reached without crossing the Reception.
 
 The doc's layout rules, as built:
 - Every terminal room has two exits, and a dock in it or next door.
-- No two terminals are within 20 s' walk: the closest pair (Boiler Room and Observation Deck) is 303 studs apart, the farthest 548 (about 39 s). From the lift, the terminals are 225 to 412 studs away. `python tools/map/design_map.py --walk` measures them round the props.
+- No two terminals are within 20 s' walk: the closest pair (Network Operations and Plant Control) is 287 studs apart, the farthest 611. From the lift, the terminals are 224 to 428 studs away. `python tools/map/design_map.py --walk` measures them round the props.
 - Every room has a camera, camera links follow the doorways both ways, and every dock is in a camera's view: the server's startup map check reports no problems.
-- Every room has lights the Chimera can kill and a light panel by its main door.
-- Sightlines are broken up by racks, coolers, tanks and crates; the Core and the long halls still have a few lines longer than 60 studs.
+- Every room has lights the Chimera can kill and a light panel by a door.
+- Sightlines are broken up by columns, cubicles, racks, plant and clutter; the Reception and the long aisles still have a few lines longer than 60 studs.
 
-How it's put together, so the space reads as one building:
-- Rooms are clear rectangles in a solid block, with 2-thick walls. Every wall face is lined with kit panels, stacked to the ceiling (light upper panels from 24 studs up), with a steel post in each corner. Doorways get kit frames; panels run up to the frames, and upper panels fill over doors.
-- Wall pieces (signs, monitors, junction boxes, cameras, light panels) hang on the panel sheets; anything mounted on a wall gets a plain panel behind it. Floor pieces stand 0.95 off the wall, clear of the panels' ribs, and nothing stands in front of a doorway.
-- Ceiling runs (beams, ducts, pipes, cable trays) go wall to wall; cable trays ride over every rack row on rods from the roof.
-- Floors and ceilings follow the room: raised floor plates in the server halls (grates in the cold aisles), carpet and drop ceilings in the offices, polished concrete in the Core and Reception, bare concrete and grate walkways in the plant and tunnels.
-- Light follows the wing: Insertion is the only bright room; the Core is cool white, the Server Farms blue, the Cooling Plant cold cyan, the Office Wing dim warm white with a few dead fixtures, the Maintenance Tunnels amber and darkest.
+How it looks real:
+- Rooms are clear rectangles carved out of a solid block, with 2-thick walls finished like a real building: painted plaster with rubber bases in the offices, wood panelling in the executive suite and the deck, stone and wood in the lobby, two-tone painted block in the stairs and back of house, tile in the restrooms. Floors follow the room (carpet tile, terrazzo, vinyl, raised floor, epoxy, bare concrete); offices have drop ceilings with a few tiles missing (wires hang out, the tile lies below), plant rooms an exposed slab with ducts, pipes and trays.
+- The textures are PS1-style pixel art like the kit's, drawn by `tools/map/textures/make_map_textures.py` (MaterialVariants AxiomPlaster, AxiomCarpet, AxiomCeiling, AxiomTerrazzo, AxiomWood, AxiomBlock, AxiomTile, AxiomConcrete, AxiomVinyl, AxiomFabric; the ids are in `MATERIALS` in `design_map.py`), plus four night facades for the city and rain on glass.
+- The props are the map's own prefabs (`tools/map/mapgen/props.py`: about 135 of them, from troffers and sofas to vending machines, toilets and claw gashes), with the kit's gameplay pieces, screens and server gear. Desks are left as people left them: screens on, chairs pushed back or knocked over, mugs, papers, bags, a kid's drawing. Notes and posters tell the story ("DON'T TRUST THE CAMERAS", "they printed another one last night").
+- Doors are sliding pocket doors that look the part (walnut office doors, steel security doors, the glass office entrance), each with a badge reader whose light shows the door's state, and exit signs over the main doorways.
+- Outside, `Workspace.City` holds the city 900 studs down (blocks of lit towers, sodium-lit streets), and `Workspace.Weather` the rain past the windows and the cool city glow that falls in through them.
 
-Calls made where the doc gives no rule, all easy to change in `tools/map/design_map.py`:
-- The Observation Deck's glass blocks movement, shots and sight like a wall (mercs see the Core through it; perception and the Chimera's Interface don't reach through it).
-- The stairs carry mercs and shells on an invisible ramp under the steps (a shell steps up 1.1 at most and could stall on the risers).
-- Breachable walls, crawlspaces, data ports and the Volatile Asset spots aren't placed yet: nothing in the code uses them.
-- Emergency lamps stay red, as the code has them (the doc says amber).
+Light, and the mood:
+- Dark: a low ambient, and most light comes from what's in the room (desk lamps left on, screens, vending machines, the reception desk's strip) and the city through the windows. A share of every room's fixtures are dead, and some flicker or sputter. Fixtures still follow the contract (Blackout, gunfire, the Upload finale).
+- `src/client/Ambience.luau` runs the mood on every client: failing lights stutter while their room has power, lightning flashes over the city every minute or so (it lights the rooms through the glass), rain runs down the windows, the masts' beacons blink. It's decoration and touches nothing the server owns.
+- Emergency lamps are amber, as the doc has them (red is the Chimera's alone): twin-head packs on the walls of every wing room.
 
-To change the map, edit the layout or the room dressing in `tools/map/design_map.py`, then:
-1. `python tools/map/design_map.py` checks it (overlaps, the panel grid, doorways, wall clearances) and writes `tools/map/MapLayout.luau` (the placements, as JSON) and `tools/map/plan.png`. Add `--check` to only check, `--walk` for the walking distances.
-2. Let Rojo sync it, then in Edit mode: `require(game.ServerStorage.DevTools.BuildMap:Clone()).build()` (or `.run()` to build in the background). It needs the kit in `ServerStorage.MapKit`, so rebuild the kit first if the kit changed. A build takes about 5 s.
+Calls made where the doc or the request left it open, all easy to change in `tools/map/design_map.py` and `tools/map/mapgen/`:
+- The Core is the Reception: its finale platform is the dais round the reception desk (36 x 34), the Uplink is the monolith inside the desk, and the Purge console stands beside it.
+- The Observation Deck's glass blocks movement, shots and sight like a wall, as before; its two docks are on the deck itself (the stairwells have cameras but no docks).
+- The stairs carry mercs and shells on an invisible ramp under each flight (a shell steps up 1.1 at most).
+- Breachable walls, crawlspaces, data ports and the Volatile Asset spots still aren't placed: nothing in the code uses them.
+- BuildMap sets the place's lighting (night, a low ambient, haze over the city, bloom and a desaturated grade). It also tries `Lighting.Technology = Future`, which some script contexts can't set: if the lights look flat, set it in the Properties window.
+
+To change the map, edit the layout in `tools/map/design_map.py` or the dressing in `tools/map/mapgen/` (`core.py` the shell and finishes, `props.py` the prefabs, `dress.py` the rooms, `city.py` the city), then:
+1. `python tools/map/design_map.py` checks it (overlaps, doorways, wall clearances, footprints) and writes `tools/map/MapLayout.luau` (the placements and prefabs, as JSON) and `tools/map/plan.png`. Add `--check` to only check, `--walk` for the walking distances.
+2. Let Rojo sync it, then in Edit mode: `require(game.ServerStorage.DevTools.BuildMap:Clone()).build()` (or `.run()` to build in the background). It needs the kit in `ServerStorage.MapKit` for the gameplay pieces, screens and racks. A build takes about 3 s.
 3. Save the place.
 
 ### The map kit
 
-`ServerStorage.MapKit` holds 89 dark-metal pieces for dressing the facility, built by `tools/mapkit/BuildMapKit.luau` (it syncs to `ServerStorage.DevTools.BuildMapKit`). The kit itself places nothing in the world; the full map is built from it.
+`ServerStorage.MapKit` holds 89 dark-metal pieces for dressing the facility, built by `tools/mapkit/BuildMapKit.luau` (it syncs to `ServerStorage.DevTools.BuildMapKit`). The kit itself places nothing in the world; the full map uses its gameplay pieces, screens, racks and industrial props alongside the map's own prefabs.
 
 | Folder | Pieces |
 | --- | --- |
