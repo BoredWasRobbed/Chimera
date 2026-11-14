@@ -429,36 +429,12 @@ def fire_stair(sid, east: bool):
 # Furniture helpers
 
 
-def try_floor(sid, name, x, z, yaw=0.0, folder=None, **opts):
-    """Places a floor piece only if it fits (inside the room, clear of doorways and other pieces)."""
-    s = SPACES[sid]
-    rect = footprint(name, x, z, yaw)
-    if rect[0] < s.x0 + 0.15 or rect[1] > s.x1 - 0.15 or rect[2] < s.z0 + 0.15 or rect[3] > s.z1 - 0.15:
+def try_floor(sid, name, x, z, yaw=0.0, folder=None, label=None, **opts):
+    """Places a floor piece only if it fits (inside the room, clear of doorways, other pieces and their
+    fronts, with its own front clear)."""
+    if not core.fits(sid, name, x, z, yaw, label):
         return None
-    for k in core.KEEPOUT.get(sid, []):
-        if overlaps(rect, k, 0.05):
-            return None
-    for f in core.FOOT.get(sid, []):
-        if overlaps(rect, f, 0.05):
-            return None
-    return floor_piece(sid, name, x, z, yaw, folder=folder, check=False, **opts)
-
-
-def scatter(sid, names, count, rect=None, seed=0, yaw_any=True, tries=12):
-    """Drops `count` pieces from `names` at random free spots."""
-    s = SPACES[sid]
-    x0, x1, z0, z1 = rect or (s.x0 + 2, s.x1 - 2, s.z0 + 2, s.z1 - 2)
-    r = rng_for("scatter", sid, seed)
-    placed = 0
-    for i in range(count * tries):
-        if placed >= count:
-            break
-        name = names[r.randrange(len(names))]
-        x, z = r.uniform(x0, x1), r.uniform(z0, z1)
-        yaw = r.uniform(0, 360) if yaw_any else 0
-        if try_floor(sid, name, x, z, yaw):
-            placed += 1
-    return placed
+    return floor_piece(sid, name, x, z, yaw, folder=folder, check=False, label=label, **opts)
 
 
 def clutter_floor(sid, x, z, kinds=("PaperScatter",), r=0.0):
@@ -468,8 +444,11 @@ def clutter_floor(sid, x, z, kinds=("PaperScatter",), r=0.0):
         piece(k, props_f(sid), x + r * i, s.y0, z, hash01("cf", sid, x, z, i) * 360)
 
 
-def desk(sid, x, z, yaw, seed, monitors=None, lamp=None, chair="normal", open_drawer=False, clutter=True, tower=True, check=True):
-    """An office desk with its computer, clutter and chair. chair: normal, pushed, tipped, none."""
+def desk(sid, x, z, yaw, seed, monitors=None, lamp=None, chair="normal", open_drawer=False, clutter=True, tower=True, check=True,
+         claimed=False):
+    """An office desk with its computer, clutter and chair (chair: normal, pushed, tipped, none). The user sits
+    on the desk's -Z side. `claimed`: the desk stands in an area already claimed (a bench of desks), so the
+    chair is placed without a footprint of its own."""
     s = SPACES[sid]
     name = "OfficeDeskOpen" if open_drawer else "OfficeDesk"
     floor_piece(sid, name, x, z, yaw, check=check, label="desk")
@@ -505,8 +484,10 @@ def desk(sid, x, z, yaw, seed, monitors=None, lamp=None, chair="normal", open_dr
         if chair == "tipped":
             px, pz = to_world(x, z, yaw, 0.3, -4.2)
             piece("OfficeChair", props_f(sid), px, s.y0 + 1.0, pz, turn + 40, tilt=-82)
+        elif claimed:
+            piece("OfficeChair", props_f(sid), px, s.y0, pz, turn)
         else:
-            try_floor(sid, "OfficeChair", px, pz, turn)
+            try_floor(sid, "OfficeChair", px, pz, turn, label="office chair")
     if hash01("bag", sid, seed) < 0.18:
         px, pz = to_world(x, z, yaw, 1.0, 0.3)
         piece("Backpack" if hash01("bk", seed) < 0.6 else "Handbag", props_f(sid), px, s.y0, pz, yaw + 30)
@@ -523,31 +504,6 @@ def partition(sid, x0, x1, z0, z1, h=5.0, color=(64, 68, 76)):
     s = SPACES[sid]
     box("Partition", props_f(sid), x0, x1, s.y0, s.y0 + h - 0.12, z0, z1, mat="Fabric", color=color, var="AxiomFabric")
     box("PartitionCap", props_f(sid), x0 - 0.03, x1 + 0.03, s.y0 + h - 0.12, s.y0 + h, z0 - 0.03, z1 + 0.03, mat="Metal", color=(140, 142, 144), var="AxiomSteel", ns=True)
-
-
-def cubicles(sid, cx, cz, seed, rows=2):
-    """A block of four desks in fabric partitions (two pods back to back), opening north and south."""
-    s = SPACES[sid]
-    w, d = 13.0, 13.0
-    claim(sid, (cx - w / 2, cx + w / 2, cz - d / 2, cz + d / 2), "cubicles")
-    partition(sid, cx - w / 2, cx + w / 2, cz - 0.15, cz + 0.15)
-    partition(sid, cx - 0.15, cx + 0.15, cz - d / 2 + 1.5, cz + d / 2 - 1.5)
-    for sx in (-1, 1):
-        partition(sid, cx + sx * w / 2 - 0.15, cx + sx * w / 2 + 0.15, cz - d / 2 + 1.5, cz + d / 2 - 1.5)
-    r = rng_for("cub", sid, cx, cz, seed)
-    for i, (sx, sz) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1))):
-        yaw = 180 if sz < 0 else 0  # desks face the centre partition
-        x, z = cx + sx * 3.25, cz + sz * 1.85
-        chair = r.choice(["normal", "normal", "normal", "pushed", "tipped", "none"])
-        lamp = None
-        if r.random() < 0.18:
-            lamp = r.choice(["on", "on", "flicker", "dead"])
-        mons = (pick_feed(sid, seed * 10 + i),) if r.random() < 0.6 else (pick_feed(sid, seed * 10 + i), pick_feed(sid, seed * 10 + i + 5))
-        desk(sid, x, z, yaw, seed * 10 + i, monitors=mons, lamp=lamp, chair=chair, open_drawer=r.random() < 0.2, check=False)
-        # Pinned papers and photos on the partitions.
-        if r.random() < 0.7:
-            px, pz = to_world(x, z, yaw, -1.0, 1.75)
-            obox("Pinned", props_f(sid), px, s.y0 + 4.0, pz, 0.85, 1.1, 0.03, yaw=yaw, mat="SmoothPlastic", color=C["paper"], nc=True, nq=True, ns=True)
 
 
 def rack_row(sid, x0, n, z, yaw, tray=True, cooler_every=0, label="racks", open_every=0):
@@ -572,20 +528,6 @@ def rack_row(sid, x0, n, z, yaw, tray=True, cooler_every=0, label="racks", open_
         for k in range(pieces_n + 1):
             obox("HangerRod", geo(sid), start + 8 * k, (tray_y + s.top) / 2, z + off, 0.1, s.top - tray_y, 0.1, color=(60, 60, 62), nc=True, ns=True)
     return x
-
-
-def contained_aisle(sid, x0, n, cz, cooler_every=0, gaps=()):
-    """Two rack rows facing each other across a cold aisle, with glass end doors and a roof."""
-    s = SPACES[sid]
-    end = rack_row(sid, x0, n, cz - 3.2, 180, cooler_every=cooler_every)
-    rack_row(sid, x0, n, cz + 3.2, 0, tray=False, cooler_every=cooler_every)
-    for xe in (x0 - 0.1, end + 0.1):
-        box("AisleDoorFrame", props_f(sid), xe - 0.1, xe + 0.1, s.y0, s.y0 + 12, cz - 1.15, cz + 1.15, mat="Metal", color=(60, 62, 66), nc=True)
-        box("AisleDoor", props_f(sid), xe - 0.04, xe + 0.04, s.y0 + 0.2, s.y0 + 11, cz - 1.0, cz + 1.0, mat="Glass", color=(110, 130, 140), t=0.6, nq=True, ns=True)
-    box("AisleRoof", props_f(sid), x0, end, s.y0 + 12, s.y0 + 12.15, cz - 1.15, cz + 1.15, mat="Glass", color=(110, 130, 140), t=0.6, nc=True, nq=True, ns=True)
-    for xt in range(int(x0) + 2, int(end) - 1, 4):
-        box("Perf", geo(sid), xt - 1.9, xt + 1.9, s.y0, s.y0 + 0.02, cz - 1.0, cz + 1.0, mat="Metal", color=(70, 74, 78), var="AxiomTread", nc=True, nq=True, ns=True)
-    return end
 
 
 def column(sid, x, z, d=4.0, folder=None, mat=("Plaster", "AxiomPlaster", (96, 94, 90))):
@@ -714,13 +656,13 @@ def dress_core():
     lounge(sid, 41.5, -137, -90, "SofaFabric", "ArmchairFabric", 2)
     lounge(sid, -41.5, -104, 90, "SofaFabric", "Armchair", 3)
     for x in (-20, -6, 8, 22):
-        try_floor(sid, "Bench", x, -142, 180)
+        try_floor(sid, "Bench", x, -140.5, 180)
     for x in (-50, -36, 36, 50):
         try_floor(sid, "PlanterTall" if hash01("pl", x) < 0.5 else "PlanterDead", x, -143, 0)
     for (x, z) in ((-50, -58), (50, -58), (-24, -70), (24, -70), (0, -144)):
         try_floor(sid, "PlanterDead" if hash01("pd", x, z) < 0.6 else "PlanterTall", x, z, 0)
     for x, z in ((-18, -67), (18, -67)):
-        try_floor(sid, "DisplayCase", x, z, 0)
+        try_floor(sid, "DisplayCase", x, z, 180)
     try_floor(sid, "WaterCooler", 34, -55.5, 0)
     try_floor(sid, "CoatRack", -38, -56.5, 0)
     clutter_floor(sid, -36, -60, ("Puddle",))
@@ -801,7 +743,7 @@ def reception_desk(sid, cx, cz):
     for k, (ang, feed) in enumerate(((0.0, "Camera"), (-0.9, "Log"), (0.9, "Status"))):
         a = ang
         px, pz = cx + math.sin(a) * (R - 1.7), cz + math.cos(a) * (R - 1.7)
-        yaw = math.degrees(a) + 180
+        yaw = math.degrees(a)  # the screen faces in, toward the receptionist
         piece(f"Monitor_{feed}", folder, px, 0.5 + 2.81, pz, yaw, **({"feed": "Camera", "cameraId": "INSERTION"} if feed == "Camera" else {}))
         kx, kz = cx + math.sin(a) * (R - 2.3), cz + math.cos(a) * (R - 2.3)
         piece("Keyboard", folder, kx, 0.5 + 2.81, kz, yaw)
@@ -845,7 +787,7 @@ def dress_insertion():
     for z in (-44, -24):
         on_wall(sid, "W", z, "Sconce", 0, folder=lights_folder(sid))
         on_wall(sid, "E", z, "Sconce", 0, check=False, folder=lights_folder(sid))
-    try_floor(sid, "Bench", -16.5, -34, 90)
+    against(sid, "W", -34, "Bench", gap=0.6)
     try_floor(sid, "PlanterTall", 16.8, -46.5, 0)
     try_floor(sid, "TrashBin", 17.6, -20.5, 0)
     try_floor(sid, "WetFloorSign", -4, -36, -20)
@@ -924,306 +866,6 @@ def dress_stair(sid, east):
 
 
 # ------------------------------------------------------------------------------------------------------
-# Office Wing
-
-
-def dress_open_office():
-    sid = "OW_OPEN"
-    s = SPACES[sid]
-    keepout(sid, -178, -58, -108.5, -99.5)  # the main aisle along the office
-    # Columns on a 32-stud grid.
-    for x in (-156, -124, -92):
-        column(sid, x, -116, 3.0, mat=("Plaster", "AxiomPlaster", (110, 108, 102)))
-    # Cubicle blocks between the columns, desks by the windows.
-    seed = 1
-    for cx in (-171, -140, -108, -76):
-        for cz in (-136, -116):
-            cubicles(sid, cx, cz, seed)
-            seed += 1
-    for cx in (-140, -76):
-        cubicles(sid, cx, -92, seed)
-        seed += 1
-    # A print station, filing, plants, a whiteboard, the team's sofa by the windows.
-    try_floor(sid, "Copier", -66, -146.0 + 1.5, 180)
-    for u in (-150, -152.2, -154.4):
-        against(sid, "S", u, "FilingCabinet")
-    try_floor(sid, "PlanterDead", -184.5, -145, 0)
-    try_floor(sid, "PlanterTall", -61, -88, 0)
-    try_floor(sid, "BoxStack", -184, -121, 30)
-    try_floor(sid, "TrashBinTipped", -128, -98, 200)
-    clutter_floor(sid, -146, -98, ("PaperScatter",))
-    clutter_floor(sid, -98, -102, ("PaperScatter",))
-    on_wall(sid, "W", -122, "Whiteboard", 0)
-    on_wall(sid, "W", -142, "PosterWellness", 0, check=False)
-    on_wall(sid, "E", -142, "PosterSafety", 0, check=False)
-    on_wall(sid, "E", -98, "CorkBoard", 0, check=False)
-    on_wall(sid, "W", -92, "WallClock", 0, check=False)
-    on_wall(sid, "E", -108, "RoomSign", 0, check=False)
-    on_wall(sid, "W", -146, "NoteLights", 0, check=False)
-    on_wall(sid, "E", -132, "ClawMarks", 0, check=False)
-    piece("KidsDrawing", props_f(sid), -137.0, s.y0, -116.17, 0)
-    for (x, z, yaw, tilt) in ((-131, -86.5, 12, -82), (-127, -88, 100, 0), (-123.5, -86.6, -30, -82)):
-        piece("OfficeChair", props_f(sid), x, s.y0 + (1.0 if tilt else 0), z, yaw, **({"tilt": tilt} if tilt else {}))
-    piece("OfficeDesk", props_f(sid), -127.5, s.y0 + 1.5, -86.2, 0, tilt=-90)
-    troffer_grid(sid, 16, 12, dead=0.5, flicker=0.15, rect=(s.x0, s.x1, -146, -86))
-    core.dock("DOCK_OW_OPEN", sid, "S", -100, "Open Office dock")
-    core.camera("OW_OPEN", sid, "E", -144, (-140, 2, -100), "Open Office", head=10.6, pan=65)
-    light_panel(sid, "E", -110)
-    emergency_packs(sid, (("E", -134), ("W", -96)))
-    # The corridor behind the office.
-    hall = "OW_HALL"
-    h = SPACES[hall]
-    for x in (-180, -150, -120, -90, -66):
-        fixture(hall, "Troffer", x, -77, 90, state=light_state(hall, x, 0.35, 0.25))
-    try_floor(hall, "TrashBin", -150.5, -73.6, 0)
-    try_floor(hall, "WaterCooler", -88, -73.6, 0)
-    try_floor(hall, "CardboardBox", -136, -80.5, 15)
-    on_wall(hall, "N", -146, "PosterCamera", 0, check=False)
-    on_wall(hall, "S", -150, "FireCabinet", 0, check=False)
-    on_wall(hall, "S", -82, "Graffiti", 0, check=False)
-    piece("DroppedFlashlight", props_f(hall), -120, 0, -75, 80, flicker="flicker")
-    conduit_trap("TRAP_OW_HALL", hall, "N", -70)
-    on_wall(hall, "N", -70, "Scorch", 3.0, check=False)
-    core.station("STATION_OW", sid, "W", -92)
-
-
-def dress_exec():
-    sid = "OW_EXEC"
-    s = SPACES[sid]
-    # The executive's desk faces the door; a lamp still on; the bookcase, the sofa, the drinks cart.
-    desk(sid, -214, -132, 90, 7, monitors=("Status", "Upload"), lamp="on", chair="pushed")
-    for z in (-136, -128):
-        try_floor(sid, "Armchair", -204.5, z, -90 + (z + 132) * 4)
-    for x in (-226, -222.4):
-        try_floor(sid, "Bookshelf", x, -114.2 + -0.65, 180)
-    try_floor(sid, "Sofa", -228.5, -126, -90)
-    try_floor(sid, "SideTable", -229, -119, 0)
-    try_floor(sid, "PlanterTall", -193.5, -145.5, 0)
-    try_floor(sid, "BoxOpen", -199, -118, 160)
-    clutter_floor(sid, -210, -124, ("PaperScatter",))
-    core.terminal("TERM_OW", sid, "S", -199, "Executive Office terminal")
-    on_wall(sid, "E", -144, "PosterChimera", 0, check=False)
-    on_wall(sid, "E", -120, "WallClock", 0, check=False)
-    fixture(sid, "Downlight", -220, -138, state="dead")
-    fixture(sid, "Downlight", -204, -138, state="flicker")
-    fixture(sid, "Downlight", -220, -120, state="on")
-    fixture(sid, "Downlight", -204, -120, state="dead")
-    core.camera("OW_EXEC", sid, "E", -116, (-222, 2, -138), "Executive Office", head=10.6)
-    light_panel(sid, "E", -122)
-    emergency_packs(sid, (("S", -226),))
-
-
-def dress_conference():
-    sid = "OW_CONF"
-    s = SPACES[sid]
-    floor_piece(sid, "ConferenceTable", -211, -86, 90, label="table")
-    for k, z in enumerate((-93, -88, -83, -78)):
-        for sx, base in ((-1, 90), (1, -90)):
-            if hash01("cc", k, sx) < 0.15:
-                continue
-            x = -211 + sx * 4.4 + sx * 1.2 * hash01("cp", k, sx)
-            piece("OfficeChair", props_f(sid), x, s.y0, z, base + 180 + 40 * (hash01("ca", k, sx) - 0.5))
-    piece("OfficeChair", props_f(sid), -205, s.y0 + 1.0, -70, 30, tilt=-82)
-    for (z, k) in ((-92, "Laptop"), (-84, "Mug"), (-80, "PaperTray")):
-        piece(k, props_f(sid), -211 + (1.2 if k != "Mug" else -1.6), s.y0 + 2.8, z, 90 + 20 * hash01("ck", z))
-    piece("ClutterA", props_f(sid), -211, s.y0 + 2.8, -88, 90)
-    on_wall(sid, "N", -228, "WallMonitor_Map", 1.0, check=False)
-    on_wall(sid, "E", -100, "Whiteboard", 0, check=False)
-    try_floor(sid, "PlanterDead", -193.5, -107, 0)
-    try_floor(sid, "TrashBin", -193.5, -64.5, 0)
-    core.dock("DOCK_OW_CONF", sid, "N", -199.5, "Conference Room dock")
-    troffer_grid(sid, 12, 14, dead=0.3, flicker=0.2)
-    core.camera("OW_CONF", sid, "E", -66, (-214, 2, -98), "Conference Room", head=10.6)
-    light_panel(sid, "E", -88)
-    emergency_packs(sid, (("S", -200),))
-
-
-def dress_break():
-    sid = "OW_BREAK"
-    s = SPACES[sid]
-    keepout(sid, -150, -138, -44, -36)
-    for x in (-180.2, -172):
-        against(sid, "S", x, "Counter", gap=0.05)
-    against(sid, "S", -165, "Fridge", gap=0.05)
-    piece("Microwave", props_f(sid), -183, s.y0 + 2.96, -37.6, 0)
-    piece("CoffeeMaker", props_f(sid), -176.5, s.y0 + 2.96, -37.6, 0)
-    for z in (-62, -57):
-        rec = against(sid, "E", z, "VendingMachine", gap=0.1)
-        piece("VendingGlow", lights_folder(sid), rec[2], s.y0, rec[4], rec[5], **({"flicker": "buzz"} if z == -57 else {}))
-    for (x, z) in ((-174, -58), (-160, -50)):
-        floor_piece(sid, "CafeTable", x, z, 0, label="table")
-        for k in range(3):
-            a = math.radians(k * 120 + 20)
-            nm = "CafeChairTipped" if (x, k) == (-160, 1) else "CafeChair"
-            try_floor(sid, nm, x + math.sin(a) * 3.3, z + math.cos(a) * 3.3, math.degrees(a))
-        piece("ClutterB" if x < -170 else "ClutterC", props_f(sid), x, s.y0 + 2.66, z, 10)
-    try_floor(sid, "TrashBin", -186, -62, 0)
-    try_floor(sid, "WaterCooler", -186, -67.5, 0)
-    on_wall(sid, "W", -50, "CorkBoard", 0, check=False)
-    on_wall(sid, "N", -150, "PosterWellness", 0, check=False)
-    on_wall(sid, "E", -45, "WallMonitor_Status", 2.0, check=False)
-    on_wall(sid, "W", -64, "NoteNOC", 0, check=False)
-    troffer_grid(sid, 14, 12, dead=0.3, flicker=0.15)
-    core.camera("OW_BREAK", sid, "N", -140, (-170, 2, -46), "Break Room", head=10.6)
-    light_panel(sid, "N", -180)
-    emergency_packs(sid, (("S", -160),))
-    # Restrooms: stalls along the far wall, a vanity with a mirror, a dryer, a leak.
-    for wc in ("OW_WC_M", "OW_WC_F"):
-        w = SPACES[wc]
-        for k in range(3):
-            x0 = w.x0 + 0.6 + 4.2 * k
-            box("Stall", props_f(wc), x0 + 4.05, x0 + 4.2, w.y0 + 0.6, w.y0 + 6.4, w.z1 - 5.6, w.z1, mat="Metal", color=(96, 100, 104), var="AxiomSteel")
-            if hash01("stall", wc, k) < 0.6:
-                obox("StallDoor", props_f(wc), x0 + 1.0, w.y0 + 3.5, w.z1 - 7.0, 0.12, 5.8, 2.6, yaw=20, mat="Metal", color=(96, 100, 104), var="AxiomSteel", nc=True)
-            else:
-                box("StallDoor", props_f(wc), x0 + 0.15, x0 + 4.05, w.y0 + 0.6, w.y0 + 6.4, w.z1 - 5.62, w.z1 - 5.5, mat="Metal", color=(96, 100, 104), var="AxiomSteel")
-            piece("Toilet", props_f(wc), x0 + 2.1, w.y0, w.z1 - 1.6, 0)
-        box("StallFront", props_f(wc), w.x0, w.x0 + 13.2, w.y0 + 6.4, w.y0 + 6.6, w.z1 - 5.65, w.z1 - 5.5, mat="Metal", color=(96, 100, 104), var="AxiomSteel", nc=True)
-        claim(wc, (w.x0 + 0.1, w.x0 + 13.2, w.z1 - 5.7, w.z1 - 0.1), "stalls")
-        against(wc, "W" if wc == "OW_WC_M" else "E", -62, "Vanity", gap=0.05)
-        on_wall(wc, "E" if wc == "OW_WC_M" else "W", -66, "HandDryer", 0, check=False)
-        clutter_floor(wc, w.x0 + 8, w.z1 - 9, ("Puddle",))
-        fixture(wc, "Troffer", (w.x0 + w.x1) / 2, w.z0 + 5, 90, state="dead" if wc == "OW_WC_M" else "flicker")
-        fixture(wc, "Troffer", (w.x0 + w.x1) / 2, w.z1 - 6, 90, state="on")
-
-
-def dress_archive():
-    sid = "OW_ARCHIVE"
-    s = SPACES[sid]
-    keepout(sid, -232, -220, 26, 38)
-    # Rows of shelving full of file boxes, a maze with narrow aisles.
-    for row, x in enumerate((-226.5, -216.0, -205.5)):
-        z = -52
-        k = 0
-        while z < 30:
-            if (row, k) in ((0, 3), (1, 1), (1, 6), (2, 4)):
-                z += 6.6
-                k += 1
-                continue
-            name = "StorageShelf_6"
-            try_floor(sid, name, x, z, 90 if row % 2 == 0 else -90)
-            z += 6.6
-            k += 1
-    try_floor(sid, "Ladder", -194, -20, 90)
-    try_floor(sid, "BoxStack", -194.5, 4, 0)
-    try_floor(sid, "BoxOpen", -195, 14, 40)
-    scatter(sid, ["CardboardBox", "BoxOpen"], 4, rect=(-230, -192, -40, 20), seed=2)
-    clutter_floor(sid, -210, -10, ("PaperScatter",))
-    for z in (-50, -30, -10, 10, 30):
-        for x in (-221, -200):
-            fixture(sid, "Batten", x, z, 90, state=light_state(sid, x * 7 + z, 0.4, 0.2))
-    core.camera("OW_ARCHIVE", sid, "E", -10, (-216, 2, 20), "Records Room", head=10.6, pan=70)
-    light_panel(sid, "E", -42)
-    emergency_packs(sid, (("E", 10),))
-
-
-# ------------------------------------------------------------------------------------------------------
-# Server Farms
-
-
-def dress_datahall():
-    sid = "SF_DATAHALL"
-    s = SPACES[sid]
-    # Contained aisles, with gaps that make a maze of the hall.
-    for (x0, n, cz) in ((72, 10, -136), (112, 8, -136), (148, 8, -136), (72, 6, -113), (102, 12, -113), (152, 6, -113)):
-        contained_aisle(sid, x0, n, cz, cooler_every=6)
-    for u in (100, 140):
-        against(sid, "S", u, "CoolingUnit", gap=0.2)
-    try_floor(sid, "GasTank", 61.5, -146, 0)
-    try_floor(sid, "GasTank", 61.5, -143, 0)
-    try_floor(sid, "CrashCart", 96, -124.5, 90)
-    try_floor(sid, "BoxStack", 126, -125, 15)
-    try_floor(sid, "CardboardBox", 129, -122, -20)
-    try_floor(sid, "Ladder", 158, -124.5, 90)
-    try_floor(sid, "BoxStack", 184.5, -100, 0)
-    try_floor(sid, "Ladder", 128, -101, 0)
-    try_floor(sid, "CableSpool", 70, -101, 0)
-    exposed_ceiling(sid, ducts=(("x", -124, 0),), trays=(("x", -146, 1.0),))
-    for x in (66, 90, 114, 138, 162, 182):
-        for z in (-146, -124, -102):
-            fixture(sid, "Batten", x, z, 0, y=s.y0 + 15.8, state=light_state(sid, x * 3 + z, 0.3, 0.12),
-                    light_=light("point", (170, 200, 255), 18, 0.8))
-    on_wall(sid, "W", -138, "Wayfinding", 0, text="DATA HALL A  ·  AUTHORISED STAFF")
-    core.dock("DOCK_SF_DATA", sid, "N", 144.6, "Data Hall dock", gap=0.4)
-    core.camera("SF_DATAHALL", sid, "W", -145, (150, 2, -143), "Data Hall", head=13.5, pan=65)
-    light_panel(sid, "W", -110)
-    conduit_trap("TRAP_SF_DATA", sid, "E", -100)
-    emergency_packs(sid, (("W", -100), ("E", -92)))
-    hall = "SF_HALL"
-    for x in (66, 96, 126, 156, 182):
-        fixture(hall, "Troffer", x, -77, 90, state=light_state(hall, x, 0.4, 0.2))
-    on_wall(hall, "N", 92, "PosterNetwork", 0, check=False)
-    on_wall(hall, "N", 140, "FireCabinet", 0, check=False)
-    try_floor(hall, "CrashCart", 176, -78, 90)
-
-
-def dress_noc():
-    sid = "SF_NOC"
-    s = SPACES[sid]
-    # The video wall over the operators' desks, rows of consoles facing it.
-    on_wall(sid, "S", 200, "WallMonitor_Camera", 1.5, check=False, feed="Camera", cameraId="SF_DATAHALL")
-    core.terminal("TERM_SF", sid, "S", 225, "Network Ops terminal")
-    for k, x in enumerate((200, 210)):
-        desk(sid, x, -138, 180, 40 + k, monitors=("Log", "Terminals") if k else ("Squad", "Status"), lamp="on" if k else None,
-             chair="pushed" if k else "normal")
-    desk(sid, 222, -140, 180, 43, monitors=("Off",), chair="tipped")
-    try_floor(sid, "CardboardBox", 196, -118, 20)
-    piece("ClutterB", props_f(sid), 210, s.y0 + 2.8, -136, 180)
-    try_floor(sid, "TrashBinTipped", 228, -126, 90)
-    on_wall(sid, "S", 204.6, "NoteNOC", 0, check=False)
-    fixture(sid, "Downlight", 202, -128, state="flicker")
-    fixture(sid, "Downlight", 218, -128, state="dead")
-    fixture(sid, "Downlight", 210, -118, state="on")
-    core.camera("SF_NOC", sid, "S", 191.5, (220, 2, -138), "Network Operations", head=10.6)
-    light_panel(sid, "S", 216.5)
-    emergency_packs(sid, (("S", 228),))
-
-
-def dress_ups():
-    sid = "SF_UPS"
-    s = SPACES[sid]
-    for z in (-100, -92, -84):
-        for x in (199, 223):
-            try_floor(sid, "Switchgear", x, z, 90 if x < 210 else -90)
-    try_floor(sid, "Toolbox", 211, -100, 20)
-    try_floor(sid, "Cone", 214, -70, 0)
-    on_wall(sid, "S", 196, "PosterSafety", 0, check=False)
-    exposed_ceiling(sid, trays=(("z", 211, 0.5),))
-    for z in (-104, -90, -76, -66):
-        fixture(sid, "Batten", 211, z, 90, y=s.y0 + 13.5, state=light_state(sid, z, 0.25, 0.25))
-    core.camera("SF_UPS", sid, "E", -68, (204, 2, -100), "UPS Room", head=12.0)
-    light_panel(sid, "W", -102)
-    conduit_trap("TRAP_SF_UPS", sid, "W", -92)
-    emergency_packs(sid, (("E", -86),))
-
-
-def dress_rackhall():
-    sid = "SF_RACKHALL"
-    s = SPACES[sid]
-    keepout(sid, 100, 132, -70, -60)
-    keepout(sid, 136, 152, -40, -30)
-    for (x0, n, cz) in ((66, 8, -56), (152, 10, -56)):
-        contained_aisle(sid, x0, n, cz, cooler_every=5)
-    # An older row in a chain-link cage, a staging area with boxes and a bench.
-    rack_row(sid, 66, 8, -38, 180)
-    for (x0, x1, z0, z1) in ((64, 94, -45.2, -45.0), (64, 64.2, -45, -32), (93.8, 94, -45, -32)):
-        box("CageMesh", props_f(sid), x0, x1, s.y0, s.y0 + 11, z0, z1, mat="Metal", color=(90, 92, 94), t=0.55, ns=True)
-    try_floor(sid, "Workbench", 110, -36, 180)
-    for (x, z) in ((122, -40), (126, -36), (98, -42)):
-        try_floor(sid, "CardboardBox", x, z, hash01("rb", x) * 90)
-    against(sid, "N", 166, "CoolingUnit", gap=0.2)
-    exposed_ceiling(sid, ducts=(("x", -48, 0),))
-    for x in (68, 92, 116, 140, 164, 182):
-        for z in (-64, -44):
-            fixture(sid, "Batten", x, z, 0, y=s.y0 + 15.8, state=light_state(sid, x + z, 0.3, 0.15), light_=light("point", (170, 200, 255), 18, 0.8))
-    core.dock("DOCK_SF_RACK", sid, "S", 180, "Rack Hall dock")
-    core.station("STATION_SF", sid, "N", 140)
-    core.camera("SF_RACKHALL", sid, "N", 92, (140, 2, -42), "Rack Hall", head=13.5, pan=70)
-    light_panel(sid, "N", 98)
-    emergency_packs(sid, (("S", 120),))
-
-
-# ------------------------------------------------------------------------------------------------------
 # Cooling Plant
 
 
@@ -1275,154 +917,8 @@ def chiller(sid, x, z, length=26):
         obox("Riser", props_f(sid), x + length * 0.42, (y + 6 + s.top) / 2, z + dz, s.top - y - 6, 1.6, 1.6, r=[0, 0, 90], mat="Metal", color=(60, 80, 110), shape="cyl", nc=True)
 
 
-def dress_pumps():
-    sid = "CP_PUMPS"
-    s = SPACES[sid]
-    for z in (-46, -26, -6, 14):
-        pump(sid, 204, z, 90)
-    obox("Header", props_f(sid), 216, 18, -14, 66, 2.2, 2.2, r=[0, 90, 0], mat="CorrodedMetal", color=(62, 58, 54), var="AxiomWorn", shape="cyl", nc=True)
-    for z in (-40, 0, 26):
-        clutter_floor(sid, 226, z, ("Puddle",))
-    core.dock("DOCK_CP_PUMPS", sid, "W", 28, "Pump Room dock")
-    steam_trap("TRAP_PUMPS", sid, "W", -20)
-    steam_trap("TRAP_PUMPS_S", sid, "W", 4)
-    exposed_ceiling(sid, pipes=(("z", 200, 2.0),))
-    for z in (-50, -28, -6, 16, 32):
-        fixture(sid, "HighBay", 212, z, y=s.y0 + 22, state=light_state(sid, z, 0.3, 0.2), light_=light("spot", (190, 225, 240), 34, 1.2, face="Left", angle=100))
-    try_floor(sid, "Ladder", 228, 34, 90)
-    try_floor(sid, "Barrel", 194, 34, 0)
-    core.camera("CP_PUMPS", sid, "W", -56, (214, 2, 0), "Pump Room", head=16, pan=60)
-    light_panel(sid, "W", -36)
-    emergency_packs(sid, (("W", -8), ("W", 20)))
-
-
-def dress_chillers():
-    sid = "CP_CHILLERS"
-    s = SPACES[sid]
-    keepout(sid, 54, 64, 26, 42)
-    keepout(sid, 136, 150, 14, 24)
-    chiller(sid, 96, 26)
-    chiller(sid, 96, 52)
-    tank(sid, 132, 40)
-    tank(sid, 132, 60, 8, 14)
-    for (x, z) in ((70, 38), (116, 64), (80, 64)):
-        obox("Mist", props_f(sid), x, 0.5, z, 4, 1, 4, t=1, nc=True, nq=True, ns=True, fx="mist")
-    exposed_ceiling(sid, pipes=(("x", 18, 2.0), ("x", 66, 2.0)))
-    for x in (66, 90, 114, 140):
-        for z in (20, 39, 66):
-            fixture(sid, "HighBay", x, z, y=s.y0 + 22, state=light_state(sid, x + z, 0.35, 0.2), light_=light("spot", (190, 225, 240), 34, 1.1, face="Left", angle=100))
-    try_floor(sid, "Barrel", 74, 66.5, 0)
-    try_floor(sid, "Barrel", 76.5, 67, 0)
-    try_floor(sid, "Toolbox", 118, 30, 30)
-    core.dock("DOCK_CP_CHILLERS", sid, "S", 66, "Chiller Hall dock")
-    steam_trap("TRAP_CHILLERS", sid, "N", 100)
-    core.camera("CP_CHILLERS", sid, "N", 62, (110, 2, 50), "Chiller Hall", head=16, pan=65)
-    light_panel(sid, "N", 76)
-    emergency_packs(sid, (("S", 110),))
-    back = "CP_BACKHALL"
-    for z in (-20, -4, 8):
-        fixture(back, "Batten", 144, z, 90, y=SPACES[back].y0 + 12.5, state=light_state(back, z, 0.3, 0.3))
-    on_wall(back, "W", -10, "Graffiti", 0, check=False, text="IT SEES YOU")
-
-
-def dress_control():
-    sid = "CP_CONTROL"
-    s = SPACES[sid]
-    core.terminal("TERM_CP", sid, "N", 170, "Plant Control terminal")
-    floor_piece(sid, "ControlConsole_8", 192, 62, 180, label="console")
-    piece("OfficeChair", props_f(sid), 192, s.y0, 66.5, 10)
-    on_wall(sid, "N", 228, "WallMonitor_Map", 1.0, check=False)
-    on_wall(sid, "W", 78, "WallMonitor_Status", 1.0, check=False)
-    desk(sid, 200, 84, 0, 61, monitors=("Status", "Log"), lamp="flicker", chair="normal")
-    desk(sid, 216, 84, 0, 62, monitors=("Off",), chair="tipped")
-    for z in (88, 91.4, 94.8):
-        against(sid, "W", z, "Locker_Double")
-    rec = against(sid, "S", 176, "Counter", gap=0.05)
-    px, pz = to_world(rec[2], rec[4], rec[5], -2.0, 0.4)
-    piece("CoffeeMaker", props_f(sid), px, s.y0 + 2.96, pz, rec[5])
-    try_floor(sid, "TrashBin", 230, 60, 0)
-    try_floor(sid, "PlanterDead", 229.5, 97, 0)
-    clutter_floor(sid, 206, 72, ("PaperScatter",))
-    on_wall(sid, "S", 196, "PosterSafety", 0, check=False)
-    on_wall(sid, "S", 204, "NotePA", 0, check=False)
-    piece("ClawMarks", props_f(sid), 220.0, s.y0, 99.88, 0)
-    troffer_grid(sid, 16, 16, dead=0.35, flicker=0.2)
-    core.camera("CP_CONTROL", sid, "S", 156.5, (206, 2, 60), "Plant Control", head=10.6, pan=65)
-    light_panel(sid, "W", 70)
-    emergency_packs(sid, (("N", 156),))
-
-
 # ------------------------------------------------------------------------------------------------------
 # Maintenance
-
-
-def dress_service(room_id, n_sid, s_sid, east):
-    s = SPACES[n_sid]
-    t = SPACES[s_sid]
-    x_mid = (s.x0 + s.x1) / 2
-    wall_out = "W" if not east else "E"
-    wall_in = "E" if not east else "W"
-    for sid in (n_sid, s_sid):
-        sp = SPACES[sid]
-        exposed_ceiling(sid, ducts=(("z", x_mid + (2 if east else -2), 0),), trays=(("z", x_mid + (-3 if east else 3), 2.5),))
-        for z in range(int(sp.z0) + 8, int(sp.z1) - 2, 14):
-            fixture(sid, "Batten", x_mid, z, 90, y=sp.y0 + 10.5, state=light_state(sid, z, 0.35, 0.3))
-    steam_trap(f"TRAP_{room_id}_N", n_sid, wall_out, -34, -2.0)
-    steam_trap(f"TRAP_{room_id}_S", s_sid, wall_out, 52, -2.0)
-    try_floor(n_sid, "MopBucket", s.x0 + 2 if not east else s.x1 - 2, -4, 0)
-    try_floor(n_sid, "WetFloorSign", x_mid, -8, 40)
-    clutter_floor(n_sid, x_mid, -2, ("Puddle",))
-    try_floor(s_sid, "BoxStack", t.x0 + 2.2 if not east else t.x1 - 2.2, 22 if not east else 58, 0)
-    try_floor(s_sid, "Ladder", t.x0 + 2.4 if east else t.x1 - 2.4, 58, 0)
-    on_wall(n_sid, wall_out, -44, "Wayfinding", 0, check=False, text="SERVICE  ·  STAIRS  ·  FABRICATION")
-    on_wall(s_sid, wall_out, 16, "PosterCamera" if east else "NoteLearns", 0, check=False)
-    on_wall(n_sid, wall_in, -40, "ClawMarks" if east else "Scorch", 0, check=False)
-    if not east:
-        try_floor(s_sid, "Stretcher", x_mid, 34, 80)
-    on_wall(n_sid, wall_in, -4, "FireCabinet", 0, check=False)
-    core.camera(room_id, n_sid, wall_in, -6, (x_mid, 2, 40 if east else -46), "East service corridor" if east else "West service corridor", head=12.2, pan=40)
-    light_panel(n_sid, wall_out, -12)
-    emergency_packs(n_sid, ((wall_in, -36),))
-    emergency_packs(s_sid, ((wall_in, 30),))
-    if east:
-        core.dock("DOCK_MT_EAST", s_sid, "E", 20, "East service dock")
-
-
-def dress_loading():
-    sid = "MT_LOADING"
-    s = SPACES[sid]
-    keepout(sid, -150, -136, 14, 22)
-    # The freight lift (out of service), pallets, a compactor, roll cages, cardboard bales.
-    on_wall(sid, "N", -110, "ElevatorDoors", 0, check=False)
-    on_wall(sid, "N", -100.5, "StencilText", 0, check=False, text="FREIGHT  ·  OUT OF SERVICE")
-    for (x, z, yaw) in ((-126, 30, 0), (-118, 30, 10), (-90, 26, 0), (-74, 60, 90), (-130, 60, 0)):
-        try_floor(sid, "CrateStack", x, z, yaw)
-    for (x, z) in ((-104, 44), (-98, 50), (-140, 46)):
-        try_floor(sid, "Crate_4", x, z, hash01("cr", x, z) * 40)
-    for (x, z) in ((-82, 40), (-84, 46)):
-        try_floor(sid, "BoxStack", x, z, hash01("bs", x) * 30)
-    try_floor(sid, "Barrel", -60, 66, 0)
-    try_floor(sid, "Barrel", -63, 66.5, 0)
-    try_floor(sid, "CableSpool", -110, 64, 0)
-    clutter_floor(sid, -100, 34, ("Puddle",))
-    exposed_ceiling(sid, ducts=(("x", 30, 0),), pipes=(("x", 56, 1.5),))
-    for x in (-140, -118, -96, -74):
-        for z in (24, 52):
-            fixture(sid, "JarLightHung", x, z, y=s.top, state=light_state(sid, x + z, 0.35, 0.25))
-    core.dock("DOCK_MT_LOADING", sid, "S", -96, "Freight Hall dock")
-    core.camera("MT_LOADING", sid, "S", -64, (-110, 2, 30), "Freight Hall", head=14, pan=65)
-    core.station("STATION_MT", sid, "S", -140)
-    light_panel(sid, "N", -64)
-    conduit_trap("TRAP_LOADING", sid, "N", -82)
-    emergency_packs(sid, (("N", -128),))
-    back = "MT_BACKHALL"
-    b = SPACES[back]
-    for z in (-26, -10, 4):
-        fixture(back, "Batten", -144, z, 90, y=b.y0 + 12.5, state=light_state(back, z, 0.3, 0.3))
-    try_floor(back, "TrashBin", -139.5, -2, 0)
-    on_wall(back, "S", -144, "CautionTape", 0, check=False)
-    on_wall(back, "W", -20, "ClawMarks", 0, check=False)
-    on_wall(back, "E", -16, "PosterNetwork", 0, check=False)
 
 
 def boiler(sid, x, z, length=18.0, d=8.0):
@@ -1438,38 +934,6 @@ def boiler(sid, x, z, length=18.0, d=8.0):
     obox("Burner", props_f(sid), x - length / 2 - 3.4, y + 3.4, z, 1.2, 2.2, 2.2, color=(70, 74, 78), shape="cyl")
     obox("BurnerGlow", props_f(sid), x - length / 2 - 3.25, y + 3.4, z, 0.06, 1.4, 1.4, mat="Neon", color=(255, 130, 50), shape="cyl", nc=True, ns=True, nq=True)
     obox("Flue", props_f(sid), x + length * 0.3, (y + 2.4 + d + s.top) / 2, z, s.top - (y + 2.4 + d), 2.0, 2.0, r=[0, 0, 90], mat="CorrodedMetal", color=(62, 58, 54), var="AxiomWorn", shape="cyl", nc=True)
-
-
-def dress_mech():
-    sid = "MT_MECH"
-    s = SPACES[sid]
-    keepout(sid, -232, -216, 40, 52)
-    keepout(sid, -160, -152, 50, 66)
-    boiler(sid, -194, 72)
-    boiler(sid, -194, 96)
-    for (x, z) in ((-224, 64), (-224, 76)):
-        try_floor(sid, "WaterHeater", x, z, 0)
-    for x in (-210, -200):
-        try_floor(sid, "Switchgear", x, 45.5, 180)
-    pump(sid, -166, 112, 0)
-    pump(sid, -166, 124, 0)
-    core.terminal("TERM_MT", sid, "W", 118, "Boiler Room terminal")
-    for (x, z) in ((-178, 84), (-208, 112), (-170, 70)):
-        obox("Mist", props_f(sid), x, 0.5, z, 4, 1, 4, t=1, nc=True, nq=True, ns=True, fx="steam")
-    for (x, z) in ((-214, 126), (-190, 120), (-226, 100)):
-        clutter_floor(sid, x, z, ("Puddle",))
-    exposed_ceiling(sid, pipes=(("x", 60, 2.0), ("x", 108, 2.0), ("z", -180, 3.0)))
-    for x in (-220, -196, -172):
-        for z in (54, 84, 114):
-            fixture(sid, "JarLightHung", x, z, y=s.top, state=light_state(sid, x + z, 0.4, 0.25))
-    on_wall(sid, "E", 100, "StencilText", 0, check=False, text="DANGER  ·  STEAM")
-    on_wall(sid, "N", -170, "NoteLearns", 0, check=False)
-    steam_trap("TRAP_MECH", sid, "N", -178)
-    steam_trap("TRAP_MECH_E", sid, "E", 90)
-    conduit_trap("TRAP_MECH_POWER", sid, "N", -196 + 10)
-    core.camera("MT_MECH", sid, "E", 44, (-200, 2, 108), "Boiler Room", head=16, pan=60)
-    light_panel(sid, "E", 70)
-    emergency_packs(sid, (("N", -204), ("E", 120)))
 
 
 # ------------------------------------------------------------------------------------------------------
@@ -1524,64 +988,12 @@ def print_gantry(sid, x, z, yaw=0.0):
     chassis(sid, x, z, yaw + 180, y=y + 0.7, height=0.55 + 0.4 * hash01(sid, x, z))
 
 
-def dress_fab():
-    sid = "FAB_ASSEMBLY"
-    s = SPACES[sid]
-    keepout(sid, -14, 14, 56, 70)
-    keepout(sid, -38, -30, 38, 54)
-    keepout(sid, 30, 38, 38, 54)
-    for (x, z, yaw) in ((-20, 20, 0), (20, 20, 0)):
-        try_floor(sid, "Workbench", x, z + 0.0, 180)
-    for (x, z) in ((-12, 34), (0, 34), (12, 34)):
-        obox("ChassisStand", props_f(sid), x, 0.4, z, 3.2, 0.8, 3.2, mat="DiamondPlate", color=(52, 54, 58), var="AxiomTread")
-        claim(sid, (x - 1.8, x + 1.8, z - 1.8, z + 1.8), "chassis stand")
-        chassis(sid, x, z, 180, y=0.8, height=0.75 + 0.25 * hash01(x))
-    try_floor(sid, "RobotArm", -22, 46, 90)
-    try_floor(sid, "RobotArm", 22, 46, -90)
-    try_floor(sid, "PartsRack", -33.5, 30, 90)
-    try_floor(sid, "PartsRack", 33.5, 26, -90)
-    try_floor(sid, "Toolbox", -6, 48, 20)
-    try_floor(sid, "Cone", 8, 50, 0)
-    for x in (-24, -8, 8, 24):
-        box("FloorLine", geo(sid), x - 0.2, x + 0.2, 0, 0.02, 14, 70, mat="SmoothPlastic", color=(170, 140, 40), nc=True, nq=True, ns=True)
-    exposed_ceiling(sid, ducts=(("x", 30, 0),), trays=(("x", 52, 2.0),))
-    for x in (-24, 0, 24):
-        for z in (22, 46, 64):
-            fixture(sid, "HighBay", x, z, y=s.y0 + 21, state=light_state(sid, x + z, 0.3, 0.2), light_=light("spot", (235, 238, 240), 34, 1.3, face="Left", angle=100))
-    on_wall(sid, "N", -26, "PosterChimera", 0, check=False)
-    on_wall(sid, "N", 0, "StencilText", 0, check=False, text="ASSEMBLY  ·  SHELL CHASSIS")
-    core.dock("DOCK_FAB_B", sid, "N", -30, "Assembly Bay dock")
-    core.camera("FAB_ASSEMBLY", sid, "N", 12, (0, 2, 50), "Assembly Bay", head=16, pan=65)
-    light_panel(sid, "N", -10)
-
-    sid = "FAB_PRINT"
-    s = SPACES[sid]
-    keepout(sid, -14, 14, 72, 84)
-    for (x, z) in ((-38, 92), (-38, 114), (38, 92), (38, 114)):
-        print_gantry(sid, x, z)
-    for (x, z) in ((-12, 104), (12, 104)):
-        chassis(sid, x, z, 0, height=1.0)
-        obox("Hoist", props_f(sid), x, 12.5, z, 0.12, 15, 0.12, color=(40, 40, 40), nc=True, ns=True)
-        claim(sid, (x - 2, x + 2, z - 1.5, z + 1.5), "hanging chassis")
-    core.dock("DOCK_FAB_A", sid, "S", 0, "Print Floor dock")
-    for x in (-8, 8, 10.5):
-        try_floor(sid, "Barrel", x, 129, 0)
-    try_floor(sid, "PartsRack", -52.5, 80, 90)
-    on_wall(sid, "S", -40, "StencilText", 0, check=False, text="PRINT BAY 1")
-    on_wall(sid, "S", 40, "StencilText", 0, check=False, text="PRINT BAY 2")
-    on_wall(sid, "E", 120, "NotePrinted", 0, check=False)
-    exposed_ceiling(sid, pipes=(("x", 80, 2.0),), beams_every=12)
-    for x in (-38, -12, 12, 38):
-        for z in (88, 112):
-            fixture(sid, "HighBay", x, z, y=s.y0 + 21, state=light_state(sid, x * 2 + z, 0.3, 0.25), light_=light("spot", (235, 238, 240), 34, 1.3, face="Left", angle=100))
-    core.camera("FAB_PRINT", sid, "N", 30, (-10, 2, 110), "Print Floor", head=16, pan=65)
-    light_panel(sid, "N", 18)
-
-
 # ------------------------------------------------------------------------------------------------------
 
 
 def dress_all():
+    from . import rooms
+
     core.door_keepouts()
     place_openings()
     exterior_windows()
@@ -1591,21 +1003,5 @@ def dress_all():
     dress_deck()
     dress_stair("OD_STAIR_W", False)
     dress_stair("OD_STAIR_E", True)
-    dress_open_office()
-    dress_exec()
-    dress_conference()
-    dress_break()
-    dress_archive()
-    dress_datahall()
-    dress_noc()
-    dress_ups()
-    dress_rackhall()
-    dress_pumps()
-    dress_chillers()
-    dress_control()
-    dress_service("MT_WEST", "MTW_N", "MTW_S", False)
-    dress_service("MT_EAST", "MTE_N", "MTE_S", True)
-    dress_loading()
-    dress_mech()
-    dress_fab()
+    rooms.dress_rooms()
     finishes()

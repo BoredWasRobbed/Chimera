@@ -1042,6 +1042,187 @@ def extras():
     p.done()
 
 
+def furnishings():
+    """Furniture and equipment for laying rooms out properly: storage runs, plant, the freight hall."""
+    p = Prefab("Credenza")  # a low wood cabinet (behind a desk, under a window)
+    p.box("Body", (7, 2.5, 1.8), (0, 1.25, 0), C["woodDark"], "Wood", "AxiomWood", solid=True)
+    p.box("Top", (7.1, 0.12, 1.9), (0, 2.56, 0), (44, 32, 24), "Wood", "AxiomWood")
+    for x in (-1.75, 0, 1.75):
+        p.box("DoorLine", (0.03, 2.0, 0.02), (x, 1.3, -0.91), (30, 22, 18), "SmoothPlastic", ns=1)
+    for x in (-2.6, -0.9, 0.9, 2.6):
+        p.box("Pull", (0.4, 0.06, 0.06), (x, 2.1, -0.94), (170, 172, 176), "Metal", ns=1)
+    p.done()
+
+    p = Prefab("MeetingTable")
+    p.cyl("Top", 0.15, 4.6, (0, 2.68, 0), C["woodDark"], "Wood", "AxiomWood", solid=True)
+    p.cyl("Stem", 2.5, 0.35, (0, 1.35, 0), (30, 30, 32), "Metal")
+    p.cyl("Foot", 0.12, 2.4, (0, 0.06, 0), (30, 30, 32), "Metal")
+    p.done()
+
+    p = Prefab("FileShelf")  # steel shelving of archive boxes, lighter than the kit's storage shelf
+    for x in (-2.95, 2.95):
+        for z in (-0.95, 0.95):
+            p.box("Post", (0.12, 7.2, 0.12), (x, 3.6, z), (110, 112, 114), "Metal", "AxiomSteel")
+    for i, y in enumerate((0.3, 2.1, 3.9, 5.7)):
+        p.box("Shelf", (6.0, 0.08, 2.0), (0, y, 0), (96, 98, 100), "Metal", "AxiomSteel", solid=(i == 0))
+        if i < 4:
+            gap = hash01("fs", i)
+            w0 = 2.4 + 1.6 * gap
+            p.box("Boxes", (w0, 1.25, 1.6), (-2.85 + w0 / 2, y + 0.67, 0.05), (124, 100, 70), "Cardboard", "AxiomCardboard", ns=1)
+            w1 = 5.5 - w0 - 0.5 - 0.6 * hash01("fs2", i)
+            if w1 > 0.6:
+                p.box("Boxes", (w1, 1.1, 1.6), (2.85 - w1 / 2, y + 0.6, 0.05), (112, 92, 64), "Cardboard", "AxiomCardboard", ns=1)
+            p.box("Labels", (w0 * 0.9, 0.22, 0.02), (-2.85 + w0 / 2, y + 0.8, -0.76), C["paper"], "SmoothPlastic", ns=1, nq=1)
+    p.box("Back", (6.0, 7.0, 0.05), (0, 3.6, 1.0), (60, 62, 64), "Metal", t=1, solid=True, ns=1)
+    p.done()
+
+    p = Prefab("PalletRack")  # heavy racking with pallets on the floor and up on the beams
+    orange, wood = (196, 110, 36), (120, 92, 60)
+    for x in (-4.1, 4.1):
+        for z in (-1.6, 1.6):
+            p.box("Upright", (0.3, 10, 0.3), (x, 5, z), (40, 70, 120), "Metal", solid=True)
+    for y in (4.6, 9.4):
+        for z in (-1.6, 1.6):
+            p.box("Beam", (8.5, 0.4, 0.25), (0, y, z), orange, "Metal")
+        p.box("Deck", (8.2, 0.06, 3.2), (0, y + 0.22, 0), (80, 82, 84), "Metal", t=0.3, ns=1)
+    for lvl, y in enumerate((0.0, 4.86)):
+        for k, x in enumerate((-2.05, 2.05)):
+            if hash01("pr", lvl, k) < 0.15:
+                continue
+            p.box("Pallet", (3.6, 0.5, 3.0), (x, y + 0.25, 0), wood, "Wood", "AxiomWood", solid=(lvl == 0))
+            h = 2.4 + 1.3 * hash01("prh", lvl, k)
+            if hash01("prw", lvl, k) < 0.5:
+                p.box("Load", (3.4, h, 2.8), (x, y + 0.5 + h / 2, 0), (124, 100, 70), "Cardboard", "AxiomCardboard", solid=(lvl == 0))
+            else:
+                p.box("Load", (3.4, h, 2.8), (x, y + 0.5 + h / 2, 0), (60, 64, 70), "SmoothPlastic", solid=(lvl == 0))
+                p.box("Wrap", (3.5, h + 0.05, 2.9), (x, y + 0.5 + h / 2, 0), (220, 224, 228), "SmoothPlastic", t=0.6, ns=1, nq=1)
+    p.done()
+
+    p = Prefab("Pallet")  # a pallet of boxes on the floor
+    p.box("Pallet", (3.6, 0.5, 3.6), (0, 0.25, 0), (120, 92, 60), "Wood", "AxiomWood", solid=True)
+    p.box("Load", (3.3, 2.6, 3.3), (0, 1.8, 0), (124, 100, 70), "Cardboard", "AxiomCardboard", solid=True)
+    p.box("Strap", (3.35, 2.65, 0.15), (0, 1.8, 0), (40, 40, 44), "SmoothPlastic", ns=1)
+    p.done()
+
+    p = Prefab("RollCage")  # a wire cart of boxes
+    for x in (-1.5, 1.5):
+        p.box("Side", (0.06, 5.2, 2.3), (x, 2.9, 0), (150, 152, 154), "Metal", t=0.45, ns=1, solid=True)
+    p.box("Back", (3.0, 5.2, 0.06), (0, 2.9, 1.15), (150, 152, 154), "Metal", t=0.45, ns=1)
+    p.box("Base", (3.1, 0.15, 2.4), (0, 0.35, 0), (120, 122, 124), "Metal", solid=True)
+    for x in (-1.3, 1.3):
+        for z in (-1.0, 1.0):
+            p.ball("Caster", 0.4, (x, 0.2, z), (20, 20, 20), "Rubber", ns=1)
+    p.box("Boxes", (2.7, 2.2, 2.0), (0, 1.55, 0), (124, 100, 70), "Cardboard", "AxiomCardboard")
+    p.box("Boxes", (2.4, 1.4, 1.8), (0.1, 3.35, 0.05), (112, 92, 64), "Cardboard", "AxiomCardboard", rot=(0, 6, 0))
+    p.done()
+
+    p = Prefab("PalletJack")
+    for x in (-0.8, 0.8):
+        p.box("Fork", (0.6, 0.3, 4.6), (x, 0.2, -0.4), (200, 160, 40), "Metal")
+    p.box("Body", (2.2, 1.0, 1.0), (0, 0.55, 2.2), (200, 160, 40), "Metal")
+    p.cyl("Handle", 3.6, 0.14, (0, 2.4, 2.9), (30, 30, 30), "Metal", rot=(0, 0, 70))
+    p.done()
+
+    p = Prefab("Compactor")
+    p.box("Body", (7, 6, 6), (0, 3, 0), (60, 90, 70), "Metal", "AxiomSteel", solid=True)
+    p.box("Hopper", (5, 2, 2.4), (0, 6.6, -1.4), (60, 90, 70), "Metal", "AxiomSteel", rot=(20, 0, 0))
+    p.box("Panel", (1.0, 1.4, 0.2), (2.6, 3.6, -3.1), (30, 30, 32), "SmoothPlastic")
+    p.box("Lamp", (0.2, 0.2, 0.05), (2.6, 4.1, -3.22), (255, 160, 60), "Neon", ns=1, nq=1)
+    warn = p.box("Warning", (3.0, 1.0, 0.02), (-1.0, 4.0, -3.02), (220, 180, 30), "SmoothPlastic", ns=1)
+    warn["gui"] = gui("KEEP HANDS CLEAR", "Front", "Oswald", (20, 20, 20), ppu=50)
+    p.done()
+
+    p = Prefab("ToolChest")
+    p.box("Body", (3.4, 4.0, 1.8), (0, 2.1, 0), (40, 60, 100), "Metal", solid=True)
+    for i in range(6):
+        y = 0.6 + 0.55 * i
+        p.box("Drawer", (3.2, 0.04, 0.04), (0, y, -0.92), (20, 30, 50), "Metal", ns=1)
+        p.box("Pull", (2.6, 0.08, 0.08), (0, y + 0.2, -0.95), (170, 172, 176), "Metal", ns=1)
+    for x in (-1.4, 1.4):
+        for z in (-0.6, 0.6):
+            p.ball("Caster", 0.3, (x, 0.15, z), (20, 20, 20), "Rubber", ns=1)
+    p.box("Rag", (0.8, 0.05, 0.6), (0.6, 4.13, 0.1), (120, 110, 90), "Fabric", ns=1, nq=1)
+    p.done()
+
+    p = Prefab("BatteryRack")  # a string of UPS batteries on a steel rack
+    for x in (-2.9, 2.9):
+        p.box("Post", (0.15, 5.2, 2.0), (x, 2.6, 0), (90, 92, 96), "Metal", "AxiomSteel", solid=True)
+    for y in (0.3, 1.9, 3.5):
+        p.box("Shelf", (5.9, 0.1, 2.0), (0, y, 0), (90, 92, 96), "Metal", "AxiomSteel")
+        for k in range(6):
+            x = -2.45 + 0.98 * k
+            p.box("Battery", (0.9, 1.2, 1.7), (x, y + 0.66, 0.05), (26, 26, 28), "SmoothPlastic", ns=1)
+            p.box("Terminal", (0.5, 0.06, 0.2), (x, y + 1.29, -0.6), (150, 150, 150), "Metal", ns=1, nq=1)
+    p.box("Label", (2.0, 0.4, 0.02), (0, 4.9, -1.01), (220, 180, 30), "SmoothPlastic", ns=1)
+    p.done()
+
+    p = Prefab("MimicPanel", "Wall")  # the plant drawn as a lit diagram, with lamps on the valves
+    p.box("Board", (16, 6, 0.2), (0, 6.5, -0.1), (44, 48, 52), "SmoothPlastic")
+    p.box("Frame", (16.4, 6.4, 0.12), (0, 6.5, -0.04), (24, 24, 26), "Metal")
+    lines = ((-6, 7.8, 9, 0.12), (-1.5, 5.2, 0.12, 5.3), (2, 7.8, 0.12, 5.3), (4.5, 5.2, 7, 0.12), (-4, 4.4, 6, 0.12), (6, 8.4, 3, 0.12))
+    for i, (x, y, w, h) in enumerate(lines):
+        p.box("Line", (w, h, 0.03), (x, y, -0.22), (60, 160, 200) if i % 2 == 0 else (200, 150, 60), "Neon", ns=1, nq=1)
+    for i in range(9):
+        x = -7 + 1.7 * i
+        p.box("Lamp", (0.3, 0.3, 0.04), (x, 4.0 + 4.6 * hash01("mp", i), -0.23), (90, 255, 140) if hash01("mpc", i) < 0.6 else (255, 160, 60), "Neon", ns=1, nq=1)
+    title = p.box("Title", (8, 0.7, 0.02), (0, 9.05, -0.22), (44, 48, 52), "SmoothPlastic", ns=1)
+    title["gui"] = gui("CHILLED WATER  ·  LEVEL 61 PLANT", "Front", "Oswald", (210, 214, 216), ppu=40)
+    p.done()
+
+    p = Prefab("AirHandler")
+    p.box("Body", (12, 8, 7), (0, 4, 0), (150, 152, 150), "Metal", "AxiomSteel", solid=True)
+    for x in (-3, 0, 3):
+        p.box("Seam", (0.06, 7.6, 0.04), (x, 4, -3.52), (90, 92, 94), "Metal", ns=1)
+        p.box("Latch", (0.15, 0.6, 0.12), (x + 1.2, 4.4, -3.56), (40, 40, 42), "Metal", ns=1)
+    p.box("Intake", (4, 3, 0.1), (-3.5, 4.5, -3.55), (30, 30, 32), "Metal")
+    for i in range(6):
+        p.box("Vane", (3.8, 0.12, 0.3), (-3.5, 3.2 + 0.5 * i, -3.65), (90, 92, 94), "Metal", rot=(30, 0, 0), ns=1)
+    p.box("Duct", (4, 6, 4), (3, 11, 0.5), (130, 132, 130), "Metal", "AxiomSteel")
+    sign = p.box("Plate", (2.6, 0.8, 0.02), (3.5, 6.6, -3.52), (210, 210, 200), "SmoothPlastic", ns=1)
+    sign["gui"] = gui("AHU-61-02", "Front", "Oswald", (30, 30, 30), ppu=50)
+    p.done()
+
+    p = Prefab("ResinRack")  # print feedstock: drums of resin on a rack
+    for x in (-2.9, 2.9):
+        p.box("Post", (0.2, 6.0, 2.4), (x, 3.0, 0), (40, 60, 90), "Metal", solid=True)
+    p.box("Shelf", (6.0, 0.15, 2.4), (0, 3.1, 0), (40, 60, 90), "Metal")
+    for lvl, y in enumerate((0.0, 3.18)):
+        for k, x in enumerate((-1.9, 0, 1.9)):
+            if hash01("rr", lvl, k) < 0.2:
+                continue
+            col = (220, 222, 226) if hash01("rc", lvl, k) < 0.6 else (60, 110, 170)
+            p.cyl("Drum", 2.6, 1.7, (x, y + 1.3, 0), col, "SmoothPlastic", solid=(lvl == 0))
+            p.box("Label", (0.8, 0.8, 0.02), (x, y + 1.4, -0.86), (220, 180, 30), "SmoothPlastic", ns=1, nq=1)
+    p.done()
+
+    p = Prefab("JanitorCart")
+    p.box("Frame", (3.2, 3.4, 1.8), (0, 1.9, 0), (200, 170, 40), "SmoothPlastic", solid=True)
+    p.box("Bag", (1.4, 2.4, 1.4), (-0.7, 1.6, 0.1), (24, 24, 26), "SmoothPlastic")
+    p.box("Bucket", (1.2, 0.9, 1.2), (1.0, 0.75, 0.2), (40, 60, 120), "SmoothPlastic")
+    p.cyl("Mop", 5.0, 0.12, (1.2, 3.2, 0.6), (150, 150, 150), "Metal", rot=(0, 0, 80))
+    for x in (-1.3, 1.3):
+        for z in (-0.7, 0.7):
+            p.ball("Caster", 0.35, (x, 0.18, z), (20, 20, 20), "Rubber", ns=1)
+    p.done()
+
+    p = Prefab("PlantPot")  # a small potted plant, half dead
+    p.cyl("Pot", 1.3, 1.3, (0, 0.65, 0), (170, 150, 120), "SmoothPlastic", solid=True)
+    p.ball("Leaves", 1.6, (0, 1.9, 0), C["plant"], "LeafyGrass")
+    p.ball("Leaves", 1.0, (0.4, 2.5, 0.2), C["plantDead"], "Grass")
+    p.done()
+
+    p = Prefab("TrashBinRecycle")
+    p.box("Bin", (1.3, 2.6, 1.3), (0, 1.3, 0), (40, 80, 140), "SmoothPlastic", solid=True)
+    p.box("Lid", (1.35, 0.15, 1.35), (0, 2.66, 0), (30, 60, 110), "SmoothPlastic", ns=1)
+    p.box("Paper", (0.9, 0.3, 0.9), (0, 2.6, 0), C["paper"], "SmoothPlastic", ns=1, nq=1)
+    p.done()
+
+    p = Prefab("DaisRug")
+    p.box("Rug", (12, 0.05, 9), (0, 0.025, 0), (60, 48, 40), "Carpet", "AxiomCarpet", ns=1, nq=1)
+    p.box("Field", (11, 0.03, 8), (0, 0.06, 0), (74, 60, 48), "Carpet", "AxiomCarpet", ns=1, nq=1)
+    p.done()
+
+
 def build_all():
     extras()
     fixtures()
@@ -1052,3 +1233,4 @@ def build_all():
     kitchen()
     industrial()
     signs()
+    furnishings()

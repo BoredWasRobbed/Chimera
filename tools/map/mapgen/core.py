@@ -873,7 +873,62 @@ def door_keepouts():
                     keepout(s.id, a[0], b[0], a[1], b[1])
 
 
-def claim(sid, rect, label, check=True):
+# Pieces with a working front (where people stand, sit or reach in): the floor in front of each must stay
+# clear of walls and of other pieces, so nothing faces a wall or gets boxed in. Depth in studs.
+FRONT_DEPTH = {
+    "OfficeDesk": 2.6, "OfficeDeskOpen": 2.6, "Workbench": 2.6, "ControlConsole_8": 2.6, "MainframeTerminal": 3.2,
+    "ShellDock": 2.0, "StorageShelf_6": 2.3, "Bookshelf": 2.0, "FilingCabinet": 1.8, "Locker_Double": 2.0,
+    "PartsRack": 2.3, "PalletRack": 3.4, "Counter": 2.3, "Fridge": 2.3, "VendingMachine": 2.3, "Copier": 2.0,
+    "WaterCooler": 1.4, "Switchgear": 2.3, "BatteryRack": 2.0, "ServerRack_A": 2.6, "ServerRack_B": 2.6,
+    "CoolingUnit": 2.3, "Credenza": 1.4, "Vanity": 2.0, "DisplayCase": 1.4, "ToolChest": 1.8, "RollCage": 1.4,
+    "Compactor": 2.3, "AirHandler": 2.3, "ResinRack": 2.0, "Sofa": 1.0, "SofaFabric": 1.0, "Bench": 1.0,
+    "SecurityPodium": 1.6, "CrashCart": 1.2, "GasTank": 0.8,
+}
+FRONTS: dict = {}  # space -> [(x0, x1, z0, z1, label)]: the floor in front of each fronted piece
+
+
+def front_rect(name, x, z, yaw):
+    """The strip of floor in front of a fronted piece (its -Z side), 90% of its width."""
+    depth = FRONT_DEPTH.get(name)
+    if not depth:
+        return None
+    sx, sy, sz, cx, cy, cz = dims(name)
+    zf = cz - sz / 2
+    pts = [to_world(x, z, yaw, cx + ax * sx * 0.45, zf - d) for ax in (-1, 1) for d in (0.05, depth)]
+    xs = [p[0] for p in pts]
+    zs = [p[1] for p in pts]
+    return (min(xs), max(xs), min(zs), max(zs))
+
+
+def seat(label: str) -> bool:
+    """Chairs may stand in front of desks and tables (that's where they go)."""
+    return "chair" in label.lower()
+
+
+def fits(sid, name, x, z, yaw, label=None) -> bool:
+    """Would a floor piece fit here: inside the room, clear of doorways, other pieces and their fronts, with
+    its own front clear?"""
+    s = SPACES[sid]
+    rect = footprint(name, x, z, yaw)
+    lab = label or name
+    if rect[0] < s.x0 + 0.15 or rect[1] > s.x1 - 0.15 or rect[2] < s.z0 + 0.15 or rect[3] > s.z1 - 0.15:
+        return False
+    if any(overlaps(rect, k, 0.05) for k in KEEPOUT.get(sid, [])):
+        return False
+    if any(overlaps(rect, f, 0.05) for f in FOOT.get(sid, [])):
+        return False
+    if not seat(lab) and any(overlaps(rect, f, 0.05) for f in FRONTS.get(sid, [])):
+        return False
+    fr = front_rect(name, x, z, yaw)
+    if fr:
+        if fr[0] < s.x0 or fr[1] > s.x1 or fr[2] < s.z0 or fr[3] > s.z1:
+            return False
+        if any(overlaps(fr, f, 0.05) for f in FOOT.get(sid, []) if not seat(f[4])):
+            return False
+    return True
+
+
+def claim(sid, rect, label, check=True, front=None):
     s = SPACES[sid]
     if check:
         if rect[0] < s.x0 + 0.1 or rect[1] > s.x1 - 0.1 or rect[2] < s.z0 + 0.1 or rect[3] > s.z1 - 0.1:
@@ -886,6 +941,22 @@ def claim(sid, rect, label, check=True):
             if overlaps(rect, f, 0.05):
                 err(f"{sid}: {label} at {tuple(round(v, 1) for v in rect)} overlaps {f[4]}")
                 break
+        if not seat(label):
+            for f in FRONTS.get(sid, []):
+                if overlaps(rect, f, 0.05):
+                    err(f"{sid}: {label} at {tuple(round(v, 1) for v in rect)} stands in front of {f[4]}")
+                    break
+    if front:
+        fr = front_rect(*front)
+        if fr:
+            if check:
+                if fr[0] < s.x0 or fr[1] > s.x1 or fr[2] < s.z0 or fr[3] > s.z1:
+                    err(f"{sid}: {label} at {tuple(round(v, 1) for v in rect)} faces a wall")
+                for f in FOOT.get(sid, []):
+                    if not seat(f[4]) and overlaps(fr, f, 0.05):
+                        err(f"{sid}: {label} at {tuple(round(v, 1) for v in rect)} faces {f[4]} too closely")
+                        break
+            FRONTS.setdefault(sid, []).append((*fr, label))
     FOOT.setdefault(sid, []).append((*rect, label))
 
 
@@ -933,14 +1004,14 @@ def against(sid, side, u, name, gap=0.3, folder=None, label=None, check=True, y=
     back = cz + sz / 2
     x, z = wall_xz(s, side, u, SKIN + gap + back)
     yaw = side_yaw(side)
-    claim(sid, footprint(name, x, z, yaw), label or name, check)
+    claim(sid, footprint(name, x, z, yaw), label or name, check, front=(name, x, z, yaw))
     return piece(name, folder or props(sid), x, s.y0 if y is None else y, z, yaw, **opts)
 
 
 def floor_piece(sid, name, x, z, yaw=0.0, folder=None, label=None, check=True, y=None, claim_it=True, **opts):
     s = SPACES[sid]
     if claim_it:
-        claim(sid, footprint(name, x, z, yaw), label or name, check)
+        claim(sid, footprint(name, x, z, yaw), label or name, check, front=(name, x, z, yaw))
     return piece(name, folder or props(sid), x, s.y0 if y is None else y, z, yaw, **opts)
 
 
