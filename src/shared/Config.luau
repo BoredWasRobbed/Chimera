@@ -228,7 +228,7 @@ Config.Terminals = {
 	TechnicianRebootSeconds = 28,
 	OperateRange = 8, -- the operator must stay this close to the terminal
 	PromptDistance = 7,
-	ForLockdown = 2, -- the slice has 3 terminals and 2 trigger Lockdown (the full game: 3 of 5)
+	ForLockdown = 3, -- the full map's 5 terminals: rebooting any 3 triggers Lockdown (the slice was 2 of 3)
 	AlertCooldown = 8, -- seconds between reboot alerts for one terminal
 }
 

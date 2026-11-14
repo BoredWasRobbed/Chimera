@@ -23,6 +23,12 @@
         },
         "BuildMapKit": {
           "$path": "tools/mapkit/BuildMapKit.luau"
+        },
+        "BuildMap": {
+          "$path": "tools/map/BuildMap.luau"
+        },
+        "MapLayout": {
+          "$path": "tools/map/MapLayout.luau"
         }
       }
     },

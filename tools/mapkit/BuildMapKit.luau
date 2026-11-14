@@ -637,6 +637,28 @@ local function wallPanel(W: number, H: number, variant: string, upperOnly: boole
 	end
 end
 
+-- A light upper panel for walls high above the floor (24 studs and up in the tall halls): the same face as
+-- WallUpper_8x8 at a distance, without chamfers or bolts, so a 40-high wall costs a third of the parts.
+local function wallUpperLite(W: number, H: number)
+	return function(b: Builder)
+		local half = W / 2 - RIB_W
+		local top = H - CORNICE_H
+		b.box("Backing", Vector3.new(W, H, Z_BACK), Vector3.new(0, H / 2, -Z_BACK / 2), COL.dark, MAT.Metal, true)
+		for _, side in { -1, 1 } do
+			b.box("Rib", Vector3.new(RIB_W, top, Z_RIB - Z_BACK), Vector3.new(side * (W / 2 - RIB_W / 2), top / 2, -(Z_BACK + Z_RIB) / 2), COL.dark, MAT.Metal)
+		end
+		b.box("Cornice", Vector3.new(W - 0.14, CORNICE_H, Z_CORNICE - Z_BACK), Vector3.new(0, H - CORNICE_H / 2, -(Z_BACK + Z_CORNICE) / 2), COL.dark, MAT.Metal)
+		b.box("Recess", Vector3.new(2 * half, top, Z_PLATE - Z_BACK), Vector3.new(0, top / 2, -(Z_BACK + Z_PLATE) / 2), COL.dark, MAT.Metal)
+		local n = math.max(1, math.round(top / 3.6))
+		local gap = 0.14
+		local h = (top - 0.24 - gap * (n - 1)) / n
+		for i = 1, n do
+			local ya = 0.12 + (i - 1) * (h + gap)
+			b.box("Sheet", Vector3.new(2 * half - 0.24, h, Z_SHEET - Z_PLATE), Vector3.new(0, ya + h / 2, -(Z_PLATE + Z_SHEET) / 2), COL.sheet, MAT.Metal)
+		end
+	end
+end
+
 local function wallCap(W: number)
 	return function(b: Builder)
 		b.bevel("Cap", Vector3.new(W - 0.14, 1, 1.02), CFrame.new(0, 0.5, -0.51), 0.18, "X", COL.dark, MAT.Metal)
@@ -1734,6 +1756,209 @@ local function emergencyLight(b: Builder)
 end
 
 ------------------------------------------------------------------------------------------------------------
+-- Windows. A window bay is 8 wide; the wall behind it is cut from 0.6 to 7.4 above the bay's floor and
+-- 7 wide (BuildMap cuts it). WallGlass_8x16 is the side people stand on: glass from the floor with a
+-- handrail, a panel above, and the pane itself in the middle of a 2-thick wall. WallWindow_8x8 is the
+-- far side: a glazed band to stack between upper panels. Both line the cut's reveals back to the pane.
+
+local GLASS_W, GLASS_Y0, GLASS_Y1 = 7, 0.6, 7.4
+
+local function revealLiners(b: Builder)
+	local h = GLASS_Y1 - GLASS_Y0
+	b.box("Reveal", Vector3.new(GLASS_W, 0.06, 0.98), Vector3.new(0, GLASS_Y0 + 0.03, 0.51), COL.edge, MAT.Metal)
+	b.box("Reveal", Vector3.new(GLASS_W, 0.06, 0.98), Vector3.new(0, GLASS_Y1 - 0.03, 0.51), COL.dark, MAT.Metal)
+	for _, s in { -1, 1 } do
+		b.box("Reveal", Vector3.new(0.06, h - 0.12, 0.98), Vector3.new(s * (GLASS_W / 2 - 0.03), (GLASS_Y0 + GLASS_Y1) / 2, 0.51), COL.dark, MAT.Metal)
+	end
+end
+
+-- The backing of a window piece: solid around the glass, open over it.
+local function windowBacking(b: Builder, H: number)
+	local half = GLASS_W / 2
+	b.box("Backing", Vector3.new(8, GLASS_Y0, Z_BACK), Vector3.new(0, GLASS_Y0 / 2, -Z_BACK / 2), COL.dark, MAT.Metal, true)
+	b.box("Backing", Vector3.new(8, H - GLASS_Y1, Z_BACK), Vector3.new(0, (GLASS_Y1 + H) / 2, -Z_BACK / 2), COL.dark, MAT.Metal, true)
+	for _, s in { -1, 1 } do
+		b.box("Backing", Vector3.new(4 - half, GLASS_Y1 - GLASS_Y0, Z_BACK), Vector3.new(s * (half + (4 - half) / 2), (GLASS_Y0 + GLASS_Y1) / 2, -Z_BACK / 2), COL.dark, MAT.Metal, true)
+	end
+end
+
+local function windowRibs(b: Builder, H: number, top: number)
+	local half = 4 - RIB_W
+	for _, side in { -1, 1 } do
+		local x = side * (4 - RIB_W / 2)
+		b.bevel("Rib", Vector3.new(RIB_W, top, Z_RIB - Z_BACK), CFrame.new(x, top / 2, -(Z_BACK + Z_RIB) / 2), 0.14, "Y", COL.dark, MAT.Metal)
+		b.box("RibStrip", Vector3.new(0.12, top - 0.55, 0.03), Vector3.new(x, (0.3 + top - 0.25) / 2, -(Z_RIB + 0.015)), COL.edge, MAT.Metal)
+	end
+	b.bevel("Cornice", Vector3.new(8 - 0.14, CORNICE_H, Z_CORNICE - Z_BACK), CFrame.new(0, H - CORNICE_H / 2, -(Z_BACK + Z_CORNICE) / 2), 0.15, "X", COL.dark, MAT.Metal)
+	b.box("CorniceLine", Vector3.new(8 - 0.2, 0.06, 0.03), Vector3.new(0, H - CORNICE_H / 2, -(Z_CORNICE + 0.015)), COL.edge, MAT.Metal)
+	return half
+end
+
+local function wallGlass(b: Builder)
+	local H = 16
+	local top = H - CORNICE_H
+	windowBacking(b, H)
+	local half = windowRibs(b, H, top)
+	-- The curb under the glass and the head over it.
+	b.bevel("Curb", Vector3.new(2 * half, GLASS_Y0, Z_KICK - Z_BACK), CFrame.new(0, GLASS_Y0 / 2, -(Z_BACK + Z_KICK) / 2), 0.08, "X", COL.plate, MAT.DiamondPlate)
+	b.bevel("Head", Vector3.new(2 * half, 0.8, Z_RAIL - Z_BACK), CFrame.new(0, GLASS_Y1 + 0.4, -(Z_BACK + Z_RAIL) / 2), 0.08, "X", COL.dark, MAT.Metal)
+	b.box("HeadLine", Vector3.new(2 * half - 0.2, 0.06, 0.03), Vector3.new(0, GLASS_Y1 + 0.2, -(Z_RAIL + 0.015)), COL.edge, MAT.Metal)
+	-- The upper panel.
+	local base = GLASS_Y1 + 0.8
+	b.box("Recess", Vector3.new(2 * half, top - base, Z_PLATE - Z_BACK), Vector3.new(0, (base + top) / 2, -(Z_BACK + Z_PLATE) / 2), COL.dark, MAT.Metal)
+	sheets(b, half, base, top)
+	revealLiners(b)
+	-- The pane, in the middle of a 2-thick wall. Tinted plastic rather than Glass, which hides the screens
+	-- behind it. It blocks movement, shots and sight like a wall.
+	local pane = b.box("Glass", Vector3.new(GLASS_W - 0.04, GLASS_Y1 - GLASS_Y0 - 0.04, 0.1), Vector3.new(0, (GLASS_Y0 + GLASS_Y1) / 2, 1), COL.glass, MAT.SmoothPlastic, true)
+	pane.Transparency = 0.62
+	pane.Reflectance = 0.12
+	pane.CastShadow = false
+	-- A handrail across the glass on standoffs.
+	b.cyl("Handrail", 2 * half - 0.3, 0.2, CFrame.new(0, 3.5, -(Z_RIB + 0.45)), Color3.fromRGB(150, 115, 30), MAT.Metal)
+	for _, s in { -1, 1 } do
+		b.box("Standoff", Vector3.new(0.16, 0.16, 0.45), Vector3.new(s * (half - 0.25), 3.5, -(Z_RIB + 0.225)), COL.edge, MAT.Metal)
+	end
+end
+
+local function wallWindow(b: Builder)
+	local H = 8
+	local top = H - CORNICE_H
+	windowBacking(b, H)
+	local half = windowRibs(b, H, top)
+	b.bevel("Sill", Vector3.new(2 * half, GLASS_Y0, Z_RAIL - Z_BACK), CFrame.new(0, GLASS_Y0 / 2, -(Z_BACK + Z_RAIL) / 2), 0.08, "X", COL.plate, MAT.Metal)
+	b.box("SillLine", Vector3.new(2 * half - 0.2, 0.06, 0.03), Vector3.new(0, GLASS_Y0 - 0.15, -(Z_RAIL + 0.015)), COL.edge, MAT.Metal)
+	revealLiners(b)
+end
+
+------------------------------------------------------------------------------------------------------------
+-- More gameplay pieces: a shell dock (Map/Docks), a charging station (Facility/Stations), a room's light
+-- panel (Facility/Lights/<RoomId>) and a floodlight (Facility/Floodlights). Set their ids when placing.
+
+-- Shell dock: a printing cradle. The shell stands on the pad facing the piece's front; Spawn marks its feet.
+-- The frame is open behind the shell so the Chimera's camera isn't blocked when it takes one.
+local function shellDock(b: Builder)
+	local model = b.parent
+	for key, value in { DockId = "DOCK_NEW", Room = "", DisplayName = "New dock", TargetKind = "TakeShell", TargetId = "DOCK_NEW" } do
+		model:SetAttribute(key, value)
+	end
+	local pad = b.cyl("Pad", 0.3, 4.6, CFrame.new(0, 0.15, 0) * ALONG_Y, COL.plate, MAT.DiamondPlate, true)
+	local ring = b.cyl("HazardRing", 0.2, 5.4, CFrame.new(0, 0.1, 0) * ALONG_Y, COL.hazard, MAT.SmoothPlastic)
+	hazard(ring, Enum.NormalId.Left)
+	b.cyl("GlowRing", 0.03, 3.9, CFrame.new(0, 0.315, 0) * ALONG_Y, COL.cyan, MAT.Neon)
+	b.cyl("PadCap", 0.04, 3.5, CFrame.new(0, 0.33, 0) * ALONG_Y, COL.plate, MAT.DiamondPlate)
+	for _, s in { -1, 1 } do
+		b.box("PostFoot", Vector3.new(1.1, 0.3, 1.1), Vector3.new(s * 2.9, 0.15, 2.7), COL.plate, MAT.DiamondPlate, true)
+		b.bevel("Post", Vector3.new(0.6, 8.4, 0.6), CFrame.new(s * 2.9, 4.5, 2.7), 0.1, "Y", COL.dark, MAT.Metal, true)
+		b.box("PostStrip", Vector3.new(0.12, 6.6, 0.03), Vector3.new(s * 2.9, 4.6, 2.385), COL.edge, MAT.Metal)
+		-- Shoulder clamps, swung open.
+		b.box("ClampArm", Vector3.new(0.3, 0.3, 2.3), Vector3.new(s * 2.55, 4.4, 1.55), COL.edge, MAT.Metal)
+		b.box("ClampPad", Vector3.new(0.45, 1.0, 0.5), Vector3.new(s * 2.3, 4.4, 0.45), COL.rubber, MAT.Rubber)
+		b.box("HipBrace", Vector3.new(0.3, 0.3, 1.6), Vector3.new(s * 2.7, 2.2, 1.9), COL.dark, MAT.Metal)
+		b.cyl("Cable", 7.6, 0.16, CFrame.new(s * 2.45, 4.6, 3.05) * ALONG_Y, COL.rubber, MAT.Rubber)
+	end
+	b.bevel("TopBeam", Vector3.new(6.4, 0.7, 0.9), CFrame.new(0, 9.05, 2.7), 0.1, "X", COL.dark, MAT.Metal, true)
+	statusLight(b, Vector3.new(1.2, 0.12, 0.04), Vector3.new(0, 9.05, 2.23), "Room")
+	local placard = b.box("Placard", Vector3.new(2.4, 0.42, 0.03), Vector3.new(-1.9, 9.05, 2.235), COL.plate, MAT.Metal)
+	textGui(placard, "SHELL DOCK", COL.stencil, { padY = 0.12 })
+	-- The print head on its arm, over the shell's head.
+	b.box("Arm", Vector3.new(0.6, 0.5, 3.4), Vector3.new(0, 8.6, 1.1), COL.plate, MAT.Metal)
+	b.bevel("Carriage", Vector3.new(1.5, 0.8, 1.1), CFrame.new(0, 8.0, -0.3), 0.08, "Y", COL.dark, MAT.Metal)
+	b.cyl("Nozzle", 0.6, 0.34, CFrame.new(0, 7.3, -0.3) * ALONG_Y, COL.edge, MAT.Metal)
+	b.cyl("NozzleTip", 0.12, 0.2, CFrame.new(0, 6.94, -0.3) * ALONG_Y, COL.amber, MAT.Neon)
+	b.cyl("FeedHose", 2.4, 0.12, CFrame.new(0.45, 8.7, 1.2) * ALONG_Z, COL.rubber, MAT.Rubber)
+	local spawn = b.box("Spawn", Vector3.new(1, 1, 1), Vector3.new(0, 0.35, 0), COL.off, MAT.SmoothPlastic)
+	spawn.Transparency = 1
+	spawn.CanQuery = false
+	spawn.CastShadow = false
+	return pad
+end
+
+-- Charging station: mercs stand on the Pad to recharge their flashlights; the charger stands behind it.
+-- BuildMap keeps the Pad in Facility/Stations and moves the charger into Map/Props, where it blocks.
+local function chargingStation(b: Builder)
+	local pad = b.cyl("Pad", 0.06, 5, CFrame.new(0, 0.05, 0) * ALONG_Y, Color3.fromRGB(255, 235, 170), MAT.Neon)
+	pad.Transparency = 0.55
+	pad.CanQuery = false
+	pad.CastShadow = false
+	b.cyl("PadRim", 0.05, 5.5, CFrame.new(0, 0.025, 0) * ALONG_Y, COL.dark, MAT.Metal)
+	b.box("Plinth", Vector3.new(2.8, 0.3, 1.6), Vector3.new(0, 0.15, 3.4), COL.plate, MAT.DiamondPlate, true)
+	b.bevel("Cabinet", Vector3.new(2.4, 5.4, 1.3), CFrame.new(0, 3.0, 3.4), 0.1, "Y", COL.dark, MAT.Metal, true)
+	b.box("Bay", Vector3.new(1.8, 1.9, 0.04), Vector3.new(0, 3.6, 2.73), COL.black, MAT.Metal)
+	for i = 1, 3 do
+		local x = (i - 2) * 0.55
+		b.box("Cell", Vector3.new(0.4, 1.4, 0.3), Vector3.new(x, 3.5, 2.8), COL.plate, MAT.Metal)
+		b.box("CellLamp", Vector3.new(0.24, 0.12, 0.03), Vector3.new(x, 4.35, 2.68), COL.amber, MAT.Neon)
+	end
+	local label = b.box("Label", Vector3.new(1.9, 0.5, 0.03), Vector3.new(0, 5.1, 2.735), COL.hazard, MAT.SmoothPlastic)
+	textGui(label, "CHARGE", COL.hazardDark, { padY = 0.12 })
+	statusLight(b, Vector3.new(0.3, 0.3, 0.04), Vector3.new(0.85, 2.3, 2.735), "Power")
+	b.cyl("Conduit", 6, 0.3, CFrame.new(0.8, 8.7, 3.6) * ALONG_Y, COL.dark, MAT.Metal)
+	b.cyl("Cord", 2.0, 0.1, CFrame.new(-0.9, 1.9, 2.7) * ALONG_Y, COL.rubber, MAT.Rubber)
+	return pad
+end
+
+-- A room's light panel: the box the Chimera aims at to Blackout a room. The Panel part (with its details
+-- welded on as children) goes straight into Facility/Lights/<RoomId>; its Indicator shows the power.
+local function lightPanel(b: Builder)
+	local y = 5.2
+	local panel = b.bevel("Panel", Vector3.new(1.9, 2.8, 0.42), CFrame.new(0, y, -0.21), 0.06, "Y", Color3.fromRGB(46, 49, 55), MAT.Metal, true)
+	local extras = {}
+	local function add(p: BasePart): BasePart
+		table.insert(extras, p)
+		return p
+	end
+	add(b.box("Door", Vector3.new(1.6, 2.0, 0.04), Vector3.new(0, y - 0.25, -0.44), COL.plate, MAT.Metal))
+	local label = add(b.box("Label", Vector3.new(1.3, 0.32, 0.02), Vector3.new(0, y + 1.0, -0.43), COL.dark, MAT.Metal))
+	textGui(label, "LIGHTING", COL.stencil, { padY = 0.12 })
+	add(b.box("Indicator", Vector3.new(0.34, 0.34, 0.05), Vector3.new(-0.55, y + 0.55, -0.465), Color3.fromRGB(120, 220, 255), MAT.Neon))
+	add(b.box("Switch", Vector3.new(0.16, 0.5, 0.12), Vector3.new(0.4, y + 0.3, -0.52), COL.edge, MAT.Metal))
+	add(b.box("Slot", Vector3.new(0.6, 0.06, 0.02), Vector3.new(0, y - 0.9, -0.465), COL.black, MAT.Metal))
+	add(b.cyl("Conduit", 16 - y - 1.4, 0.3, CFrame.new(0.55, (y + 1.4 + 16) / 2, -0.2) * ALONG_Y, COL.dark, MAT.Metal))
+	-- Children of the Panel part (with the panel's own bevel strips), so the whole box moves with it.
+	for _, d in b.parent:GetChildren() do
+		if d:IsA("BasePart") and d ~= panel then
+			table.insert(extras, d)
+		end
+	end
+	for _, p in extras do
+		p.Parent = panel
+	end
+	return panel
+end
+
+-- Floodlight: the Lens is the part the Purge finale lights (it turns white neon with a spotlight); the
+-- housing hangs off it as children. Aim the whole piece: its front is the beam.
+local function floodlight(b: Builder)
+	local lens = b.box("Lens", Vector3.new(2.6, 1.7, 0.1), Vector3.new(0, 0, -0.85), Color3.fromRGB(30, 32, 36), MAT.SmoothPlastic)
+	lens.CastShadow = false
+	local beam = Instance.new("SpotLight")
+	beam.Face = Enum.NormalId.Front
+	beam.Color = Color3.fromRGB(235, 245, 255)
+	beam.Brightness = 6
+	beam.Range = 60
+	beam.Angle = 75
+	beam.Shadows = true
+	beam.Enabled = false
+	beam.Parent = lens
+	b.bevel("Housing", Vector3.new(2.9, 2.0, 1.6), CFrame.new(0, 0, 0), 0.12, "Y", COL.dark, MAT.Metal)
+	b.box("Visor", Vector3.new(3.0, 0.08, 0.8), Vector3.new(0, 1.04, -1.1), COL.dark, MAT.Metal)
+	b.box("Yoke", Vector3.new(3.3, 0.3, 0.4), Vector3.new(0, -1.25, 0.1), COL.edge, MAT.Metal)
+	for _, s in { -1, 1 } do
+		b.box("YokeArm", Vector3.new(0.25, 1.4, 0.3), Vector3.new(s * 1.62, -0.6, 0.1), COL.edge, MAT.Metal)
+		for i = 1, 3 do
+			b.box("Fin", Vector3.new(2.6, 0.06, 0.5), Vector3.new(0, s * 0.3 * i, 1.05), COL.plate, MAT.Metal)
+		end
+	end
+	for _, p in b.parent:GetChildren() do
+		if p:IsA("BasePart") and p ~= lens then
+			p.Parent = lens
+		end
+	end
+	return lens
+end
+
+------------------------------------------------------------------------------------------------------------
 -- The kit list: category, name, mount, where it goes in the place, and the builder.
 
 local GEOM, PROPS, LIGHTS = "Map/Geometry", "Map/Props", "Facility/Lights/<RoomId>"
@@ -1755,6 +1980,12 @@ local KIT = {
 	{ "Walls", "WallUpper_8x8", "Wall", GEOM, wallPanel(8, 8, "Plate", true) },
 	{ "Walls", "WallUpper_8x8_Ribbed", "Wall", GEOM, wallPanel(8, 8, "Ribbed", true) },
 	{ "Walls", "WallUpper_8x4", "Wall", GEOM, wallPanel(8, 4, "Plate", true) },
+	{ "Walls", "WallUpper_4x8", "Wall", GEOM, wallPanel(4, 8, "Plate", true) },
+	{ "Walls", "WallUpper_4x4", "Wall", GEOM, wallPanel(4, 4, "Plate", true) },
+	{ "Walls", "WallUpper_8x8_Lite", "Wall", GEOM, wallUpperLite(8, 8) },
+	{ "Walls", "WallUpper_4x8_Lite", "Wall", GEOM, wallUpperLite(4, 8) },
+	{ "Walls", "WallGlass_8x16", "Wall", GEOM, wallGlass },
+	{ "Walls", "WallWindow_8x8", "Wall", GEOM, wallWindow },
 	{ "Walls", "WallCap_8", "Wall", GEOM, wallCap(8) },
 	{ "Walls", "Pillar_16", "Floor", GEOM, pillar(16) },
 	{ "Walls", "Pillar_12", "Floor", GEOM, pillar(12) },
@@ -1778,6 +2009,7 @@ local KIT = {
 	{ "Lights", "Light_CeilingStrip", "Ceiling", LIGHTS, lightStrip },
 	{ "Lights", "Light_WallCage", "Wall", LIGHTS, lightCage },
 	{ "Lights", "Light_Pendant", "Ceiling", LIGHTS, lightPendant },
+	{ "Lights", "LightPanel", "Wall", LIGHTS, lightPanel },
 
 	{ "Office", "Desk_8x4", "Floor", PROPS, desk },
 	{ "Office", "Workstation_8x4", "Floor", PROPS, workstation },
@@ -1827,6 +2059,9 @@ local KIT = {
 	{ "Gameplay", "SecurityCamera", "Wall", "Facility/Cameras", securityCamera },
 	{ "Gameplay", "Door_8x10", "Doorway", "Map/Doors", door },
 	{ "Gameplay", "Light_Emergency", "Ceiling", "Facility/EmergencyLights/<RoomId>", emergencyLight },
+	{ "Gameplay", "ShellDock", "Floor", "Map/Docks", shellDock },
+	{ "Gameplay", "ChargingStation", "Floor", "Facility/Stations", chargingStation },
+	{ "Gameplay", "Floodlight", "Free", "Facility/Floodlights", floodlight },
 }
 
 local CATEGORY_ORDER = { "Walls", "Floors", "Ceilings", "Doorways", "Lights", "Office", "ServerRoom", "Industrial", "Signs", "Gameplay" }

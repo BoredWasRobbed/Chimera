@@ -20,7 +20,7 @@ Edit code in `src/`, never in Studio: Rojo overwrites synced scripts whenever th
 | `src/server` | `ServerScriptService.Server` |
 | `src/client` | `StarterPlayer.StarterPlayerScripts.Client` |
 | `src/shared` | `ReplicatedStorage.Shared` |
-| `tools/graybox` | `ServerStorage.DevTools` (dev tools, never run in a game) |
+| `tools/graybox`, `tools/mapkit`, `tools/map` | `ServerStorage.DevTools` (dev tools, never run in a game) |
 
 `default.project.json` also sets the place settings the code relies on: no auto-spawned characters (the Chimera has no body), merc walk speed 14, no shift-lock (Shift is sprint) and streaming off (the Chimera watches distant rooms through cameras). If you add a new service to the project file, disconnect and reconnect the Rojo plugin: live sync doesn't pick up new services.
 
@@ -42,7 +42,7 @@ A server plays round after round. In the lobby, Chimera Chance picks the Chimera
 
 ### Milestone 1: movement and replication
 
-The graybox (the Core, three wings and Insertion; 14 cameras, 8 shell docks, 11 lockable doors, 3 terminals, 5 charging stations, 10 Overload traps, and since milestone 3 the Core platform, its floodlights and emergency lights in every wing room), merc movement, the Chimera's facility mode, shells on a server-authoritative controller, and perception-gated replication.
+The graybox (the Core, three wings and Insertion; 14 cameras, 8 shell docks, 11 lockable doors, 3 terminals, 5 charging stations, 10 Overload traps, and since milestone 3 the Core platform, its floodlights and emergency lights in every wing room), merc movement, the Chimera's facility mode, shells on a server-authoritative controller, and perception-gated replication. The full map (see "The full map: Axiom Data Vault") has since replaced the graybox in the place.
 
 ### Milestone 2: combat, visibility, downs and assimilation
 
@@ -66,7 +66,7 @@ Calls made where the design doc gives no number or rule, all easy to change in `
 ### Milestone 3: terminals, the upload meter and both finales
 
 - **Rounds.** Lobby (20 s) → Loadout (25 s) → Deployment (15 s) → the race (up to 8:00) → a finale (2:00, never past 10:00 from the start of the race) → Results (10 s) → back to the lobby. A round needs 4 players. Chimera Chance: a weight that starts at 1, gains 1 for each round played as a merc and resets when picked; the lobby shows everyone's chance. During Deployment mercs enter at the Insertion lift and the Chimera can hop cameras but can't use Interface, modules or shells.
-- **Terminals.** Hold E to reboot: 40 s (Technician 28 s), and progress stays when you let go. One operator at a time; the operator can't shoot or use gear, and any damage interrupts. The Chimera gets an alert naming the terminal and room when a reboot starts. Corrupt takes 20% off, locks the terminal for 10 s and adds 3% upload. A rebooted terminal lights its wing's red emergency lamps and shuts that wing's docks for the rest of the match. Two of the slice's three terminals trigger Lockdown.
+- **Terminals.** Hold E to reboot: 40 s (Technician 28 s), and progress stays when you let go. One operator at a time; the operator can't shoot or use gear, and any damage interrupts. The Chimera gets an alert naming the terminal and room when a reboot starts. Corrupt takes 20% off, locks the terminal for 10 s and adds 3% upload. A rebooted terminal lights its wing's red emergency lamps and shuts that wing's docks for the rest of the match. Any three of the full map's five terminals trigger Lockdown (on the slice's graybox it was two of three; `Config.Terminals.ForLockdown`).
 - **The upload meter and Threat Level.** The meter fills over 8:00 and moves with the match events: down +10%, assimilation +15%, bleed-out +5%, corrupted terminal +3%, shell destroyed with the Chimera inside −10%. Threat rises at 2:00, 4:00 and 6:00 and is 4 in either finale. Both teams see the meter, every terminal's progress and Threat on the top bar.
 - **Lockdown and the Purge finale.** Every dock shuts down and the Chimera is locked into one body: the shell it's in, or a last one booted at a Core dock 5 s later. Mercs standing on the Core platform hold it; the Chimera's body anywhere in the Core stalls them. The Core is floodlit (no Blackout there) and a scan pulse Reveals the Chimera every 15 s. Destroying the body or 45 s held wins it for the mercs; time running out wins it for the Chimera.
 - **The Upload finale.** The Chimera's body on the platform holds; any standing merc in the Core stalls it. Every Core light dies, and every 15 s a network scan outlines the mercs in the Core for the Chimera. A lost body costs 5 s of held time and a new one boots at a Core dock 10 s later. 45 s held wins it for the Chimera; time running out wins it for the mercs.
@@ -116,24 +116,66 @@ Calls made where the request left it open, all easy to change in ShellRig:
 
 The map is built in Studio, and the code finds everything by folder and attribute: see the header of `src/shared/FacilityMap.luau`. The server checks the layout rules at startup and warns in the Output about one-way camera links, rooms without a camera and docks no camera can see.
 
-`tools/graybox/BuildGraybox.luau` generated the current graybox. Running it again replaces `Workspace.Map` and `Workspace.Facility`, so hand edits are lost: `require(game.ServerStorage.DevTools.BuildGraybox:Clone())()` from the command bar in Edit mode (the clone skips the module cache).
+`tools/map/BuildMap.luau` builds the current map (see below). `tools/graybox/BuildGraybox.luau` still builds the old three-wing graybox for reference; both replace `Workspace.Map` and `Workspace.Facility`, so hand edits are lost.
+
+### The full map: Axiom Data Vault
+
+The place holds the full map from the design doc: five wings round the Core, the Insertion lift and the Fabrication Bays, built entirely from the map kit. The plan is `tools/map/plan.png` (north is up; the Observation Deck is the outlined upper level over Insertion).
+
+| Area | Rooms (the room the game sees, with its camera) |
+| --- | --- |
+| The Core | The Core: three storeys round the Uplink (a steel tower to the roof with racks at its base and blue data lines), the finale platform with the Purge console, four rack islands, cable trenches to the gates, a lighting rig with the four floodlights. 3 cameras, 2 docks |
+| Insertion | Insertion: the brightly lit lift lobby with lockers and a security desk; the squad spawns inside the freight lift |
+| Observation Decks (upper level) | Observation Deck: a glass gallery over the Core with control consoles and the terminal; the West and East Stair Halls climb to it (a dock at the foot of each) |
+| Office Wing (west) | Reception, Cubicle Floor (eight cubicle blocks, the wing's dock), Executive Office (terminal), Conference Room (dock) |
+| Fabrication Bays (north-west) | Print Floor (print gantries over half-printed chassis), Assembly Bay; one dock each, online until Lockdown |
+| Server Farms (north) | Rack Hall (contained aisles either side of a walkway), Data Hall (a maze of rack rows), Network Operations (terminal) |
+| Cooling Plant (north-east) | Pump Room, Chiller Hall (coolant tanks and cold mist), Plant Control (terminal) |
+| Maintenance Tunnels (east) | Service Tunnel, Pipe Gallery (2 cameras), Boiler Room (terminal), South Tunnel; most of the Overload traps |
+
+In all: 21 rooms, 24 cameras, 14 shell docks, 5 terminals, 20 lockable doors, 5 charging stations and 16 Overload traps, about 79,000 parts. The wings also join each other (Fabrication to the Rack Hall and the Cubicle Floor, the Rack Hall to the Pump Room, the Pump Room to the Service Tunnel, the stair halls to Reception and the South Tunnel), so every wing can be reached without crossing the Core.
+
+The doc's layout rules, as built:
+- Every terminal room has two exits, and a dock in it or next door.
+- No two terminals are within 20 s' walk: the closest pair (Boiler Room and Observation Deck) is 303 studs apart, the farthest 548 (about 39 s). From the lift, the terminals are 225 to 412 studs away. `python tools/map/design_map.py --walk` measures them round the props.
+- Every room has a camera, camera links follow the doorways both ways, and every dock is in a camera's view: the server's startup map check reports no problems.
+- Every room has lights the Chimera can kill and a light panel by its main door.
+- Sightlines are broken up by racks, coolers, tanks and crates; the Core and the long halls still have a few lines longer than 60 studs.
+
+How it's put together, so the space reads as one building:
+- Rooms are clear rectangles in a solid block, with 2-thick walls. Every wall face is lined with kit panels, stacked to the ceiling (light upper panels from 24 studs up), with a steel post in each corner. Doorways get kit frames; panels run up to the frames, and upper panels fill over doors.
+- Wall pieces (signs, monitors, junction boxes, cameras, light panels) hang on the panel sheets; anything mounted on a wall gets a plain panel behind it. Floor pieces stand 0.95 off the wall, clear of the panels' ribs, and nothing stands in front of a doorway.
+- Ceiling runs (beams, ducts, pipes, cable trays) go wall to wall; cable trays ride over every rack row on rods from the roof.
+- Floors and ceilings follow the room: raised floor plates in the server halls (grates in the cold aisles), carpet and drop ceilings in the offices, polished concrete in the Core and Reception, bare concrete and grate walkways in the plant and tunnels.
+- Light follows the wing: Insertion is the only bright room; the Core is cool white, the Server Farms blue, the Cooling Plant cold cyan, the Office Wing dim warm white with a few dead fixtures, the Maintenance Tunnels amber and darkest.
+
+Calls made where the doc gives no rule, all easy to change in `tools/map/design_map.py`:
+- The Observation Deck's glass blocks movement, shots and sight like a wall (mercs see the Core through it; perception and the Chimera's Interface don't reach through it).
+- The stairs carry mercs and shells on an invisible ramp under the steps (a shell steps up 1.1 at most and could stall on the risers).
+- Breachable walls, crawlspaces, data ports and the Volatile Asset spots aren't placed yet: nothing in the code uses them.
+- Emergency lamps stay red, as the code has them (the doc says amber).
+
+To change the map, edit the layout or the room dressing in `tools/map/design_map.py`, then:
+1. `python tools/map/design_map.py` checks it (overlaps, the panel grid, doorways, wall clearances) and writes `tools/map/MapLayout.luau` (the placements, as JSON) and `tools/map/plan.png`. Add `--check` to only check, `--walk` for the walking distances.
+2. Let Rojo sync it, then in Edit mode: `require(game.ServerStorage.DevTools.BuildMap:Clone()).build()` (or `.run()` to build in the background). It needs the kit in `ServerStorage.MapKit`, so rebuild the kit first if the kit changed. A build takes about 5 s.
+3. Save the place.
 
 ### The map kit
 
-`ServerStorage.MapKit` holds 79 dark-metal pieces for dressing the facility, built by `tools/mapkit/BuildMapKit.luau` (it syncs to `ServerStorage.DevTools.BuildMapKit`). Nothing is placed in the world: drag pieces out of the Explorer.
+`ServerStorage.MapKit` holds 89 dark-metal pieces for dressing the facility, built by `tools/mapkit/BuildMapKit.luau` (it syncs to `ServerStorage.DevTools.BuildMapKit`). The kit itself places nothing in the world; the full map is built from it.
 
 | Folder | Pieces |
 | --- | --- |
-| Walls | 8x16 and 8x12 wall panels (plate, ribbed, vent, pipes, live screen, hazard, access hatch), 4-wide fillers, upper panels to stack for taller rooms (8x8) and over doors (8x4), a cap, 16 and 12 pillars |
+| Walls | 8x16 and 8x12 wall panels (plate, ribbed, vent, pipes, live screen, hazard, access hatch), 4-wide fillers, upper panels to stack for taller rooms (8x8, 4x8) and over doors (8x4, 4x4), light upper panels for walls 24+ studs up (`_Lite`: the same face without chamfers or bolts), a floor-to-ceiling window (`WallGlass_8x16`, with the pane) and the glazed band for the far side of the wall (`WallWindow_8x8`), a cap, 16 and 12 pillars |
 | Floors | diamond plate and grate tiles (8x8), a hazard strip (8x1), a floor hatch (4x4) |
 | Ceilings | ceiling panel (8x8), I-beam, duct, cable tray, hanging pipes |
 | Doorways | frames for the graybox openings: 8x10, 12x10, 24x12, 24x14 |
-| Lights | ceiling strip, caged wall lamp, pendant |
+| Lights | ceiling strip, caged wall lamp, pendant, a room's light panel (the Blackout target; its `Panel` part goes straight into the room's Lights folder) |
 | Office | desk, a dressed workstation, monitors (one per feed), keyboard, mouse, laptop, mug, paper tray, PC tower, chair, control console, wall monitors (map, camera, status), filing cabinet, locker, storage shelf |
 | ServerRoom | two server racks, a cooling unit, a cable bundle under a floor protector |
 | Industrial | pipe runs (horizontal with a valve and gauge, and vertical), junction box, crate, crate stack, barrel, railing |
 | Signs | sector (names its room), direction, warning, restricted, and a Lockdown sign that lights up |
-| Gameplay | contract-ready Mainframe Terminal, security camera, sliding door (for `DoorFrame_8x10`) and emergency beacon |
+| Gameplay | contract-ready Mainframe Terminal, security camera, sliding door (for `DoorFrame_8x10`), emergency beacon, shell dock (a printing cradle, open behind the shell so the Chimera's camera isn't blocked), charging station and floodlight |
 
 How the pieces fit:
 - Everything sits on a 4-stud grid and most pieces are 8 wide, matching the graybox walls and openings.
